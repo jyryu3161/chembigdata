@@ -1,0 +1,755 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>kNN과 거리 척도</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: feature-space stage (scatter or profile chart + explanation panel) + sklearn code/console rail + caption */
+:root{
+  --bg:#F2F6F7; --surface:#FFFFFF; --ink:#0F2A35; --muted:#5A6F78; --line:#D2DEE2;
+  --grid:rgba(0,88,124,.07);
+  --a:#00587C; --i:#D9822B; --c:#6B4FB3; --hl:#64CCC9; --accent:#008EAA; --accent-soft:#E3F4F8;
+  --code-bg:#0F2A35; --code-ink:#DCE8EC; --code-dim:#6F8A94;
+  --kw:#7FD0E6; --str:#9FE0B4; --num:#F4C27A; --cm:#7C949D; --hlbg:rgba(100,204,201,.16);
+  --f-ui:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --f-code:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0A181E; --surface:#11252D; --ink:#E3EDF0; --muted:#8EA4AC; --line:#22404A; --grid:rgba(100,204,201,.06);
+  --a:#4FB3D9; --i:#F0A04B; --c:#A88BEA; --hl:#64CCC9; --accent:#3DBBD3; --accent-soft:#0F3140;
+  --code-bg:#07131A; --code-ink:#DCE8EC; --code-dim:#5E7882; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0A181E; --surface:#11252D; --ink:#E3EDF0; --muted:#8EA4AC; --line:#22404A; --grid:rgba(100,204,201,.06);
+  --a:#4FB3D9; --i:#F0A04B; --c:#A88BEA; --hl:#64CCC9; --accent:#3DBBD3; --accent-soft:#0F3140;
+  --code-bg:#07131A; --code-ink:#DCE8EC; --code-dim:#5E7882; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:15px;line-height:1.6}
+.wrap{max-width:1280px;margin:0 auto;padding-inline:20px;padding-block:24px 40px}
+header.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;margin-bottom:16px}
+header.top h1{margin:0;font-size:26px;font-weight:700;letter-spacing:-.01em}
+header.top p{margin:0;color:var(--muted);font-size:14px}
+.main{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:920px){.main{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:14px;min-width:0}
+
+.stage-wrap{position:relative;width:100%;aspect-ratio:960/560;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.stage{position:absolute;left:0;top:0;width:960px;height:560px;transform-origin:0 0}
+.no-anim,.no-anim *{transition:none!important;animation:none!important}
+
+#bnd{position:absolute;left:60px;top:30px;width:480px;height:480px;opacity:0;transition:opacity .35s}
+svg.plot{position:absolute;left:0;top:0;width:960px;height:560px;overflow:visible}
+#scat,#prof{transition:opacity .5s}
+#prof{opacity:0} #prof.on{opacity:1} #scat.off{opacity:0}
+.frame{fill:none;stroke:var(--line)}
+.gridl{stroke:var(--grid);stroke-width:1}
+.tick{font:400 12px var(--f-code);fill:var(--muted)}
+.atitle{font:600 13px var(--f-ui);fill:var(--muted)}
+.axes{opacity:0;transition:opacity .6s} .axes.on{opacity:1}
+
+.pt{transition:opacity .5s}
+.pt .m{transform-box:fill-box;transform-origin:center;transform:scale(0);transition:transform .45s cubic-bezier(.3,1.5,.5,1)}
+.pt.on .m{transform:scale(1)}
+.pt.A .m{fill:var(--a)} .pt.I .m{fill:var(--i)}
+.pt .ring{fill:none;stroke:var(--ink);stroke-width:2.2;opacity:0;transform-box:fill-box;transform-origin:center;transform:scale(1.6);transition:all .45s}
+.pt.nb .ring{opacity:1;transform:scale(1)}
+.pts.dim .pt:not(.nb){opacity:.28}
+
+.ln{stroke:var(--muted);stroke-width:1.2;stroke-dasharray:1;stroke-dashoffset:1;opacity:0;transition:stroke-dashoffset .6s,opacity .4s}
+.ln.on{stroke-dashoffset:0;opacity:.55}
+.ln.on.k{stroke:var(--ink);stroke-width:2;opacity:.9}
+.lp{fill:none;stroke:var(--c);stroke-width:2.2;stroke-dasharray:1;stroke-dashoffset:1;opacity:0;transition:stroke-dashoffset .8s,opacity .4s}
+.lp.on{stroke-dashoffset:0;opacity:1}
+.dl{font:600 12px var(--f-code);fill:var(--ink);paint-order:stroke;stroke:var(--surface);stroke-width:4px;stroke-linejoin:round;opacity:0;transition:opacity .4s}
+.dl.on{opacity:1}
+.tri{opacity:0;transition:opacity .5s} .tri.on{opacity:1}
+.tri path{fill:none;stroke:var(--c);stroke-width:2;stroke-dasharray:5 4}
+.tri text{font:600 12px var(--f-code);fill:var(--c);paint-order:stroke;stroke:var(--surface);stroke-width:4px}
+
+#nbr{fill:var(--hl);fill-opacity:.12;stroke:var(--ink);stroke-width:1.6;stroke-dasharray:6 5;opacity:0;transition:opacity .4s}
+#nbr.on{opacity:1}
+#dia{fill:var(--c);fill-opacity:.1;stroke:var(--c);stroke-width:1.8;stroke-dasharray:6 5;transform:scale(0);opacity:0;transition:transform .9s cubic-bezier(.3,1.2,.5,1),opacity .4s}
+#dia.on{transform:scale(1);opacity:1}
+
+#q{opacity:0;transform:translate(var(--qx),calc(var(--qy) - 70px));transition:opacity .4s,transform .8s cubic-bezier(.3,1.4,.5,1)}
+#q.on{opacity:1;transform:translate(var(--qx),var(--qy))}
+#q .qm{fill:var(--surface);stroke:var(--ink);stroke-width:2.4;stroke-dasharray:4 3;transition:fill .5s}
+#q.A .qm{fill:var(--a);stroke-dasharray:none} #q.I .qm{fill:var(--i);stroke-dasharray:none}
+#q text{font:700 13px var(--f-ui);fill:var(--ink);text-anchor:middle;dominant-baseline:central;transition:opacity .3s}
+#q.A text,#q.I text{opacity:0}
+#q .ping{fill:none;stroke:var(--hl);stroke-width:3;opacity:0}
+#q.ping .ping{animation:ping 1s ease-out 2}
+@keyframes ping{0%{r:10;opacity:.9}100%{r:44;opacity:0}}
+#qv{font:700 14px var(--f-code);fill:var(--ink);paint-order:stroke;stroke:var(--surface);stroke-width:5px;opacity:0;transition:opacity .5s}
+#qv.on{opacity:1}
+
+/* profile chart */
+.pl{fill:none;stroke-width:2.6;stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset 1.2s,opacity .4s,stroke-width .3s}
+#prof.on .pl{stroke-dashoffset:0}
+.pl.q{stroke:var(--ink)} .pl.pa{stroke:var(--a)} .pl.pb{stroke:var(--i)} .pl.pc{stroke:var(--c)}
+.pl.hot{stroke-width:5} .pl.dimp{opacity:.25}
+.pdot{transition:opacity .4s} .pdot.dimp{opacity:.25}
+.plab{font:700 13px var(--f-ui)}
+
+/* side panel inside stage */
+#side{position:absolute;left:580px;top:30px;width:360px;height:490px;border-left:1px solid var(--line);padding:2px 0 0 22px;opacity:0;transition:opacity .5s}
+#side.on{opacity:1}
+.sh{font:600 12px var(--f-ui);letter-spacing:.06em;color:var(--muted);text-transform:uppercase;margin:0 0 10px}
+.rk{display:grid;grid-template-columns:24px 16px 48px 1fr;align-items:center;gap:8px;height:33px;padding:0 8px;border-radius:6px;font:400 13.5px var(--f-code);
+  animation:rowin .45s both;animation-delay:var(--d,0s)}
+.rk .n{color:var(--muted)} .rk b{font-weight:600}
+.bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--muted);opacity:.55}
+.rk.in{background:var(--accent-soft)} .rk.in .bar i{background:var(--ink);opacity:.8}
+@keyframes rowin{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+.mk{width:12px;height:12px;display:inline-block}
+.mk.A{background:var(--a);border-radius:50%} .mk.I{background:var(--i);border-radius:2px}
+.kcut{display:flex;align-items:center;gap:8px;margin:2px 0;font:600 12px var(--f-code);color:var(--ink)}
+.kcut::before,.kcut::after{content:"";flex:1;border-top:2px dashed var(--ink)}
+.tally{margin-top:12px;padding:10px 14px;border:1px solid var(--line);border-radius:8px;font-size:14px}
+.tally .cnt{display:flex;gap:16px;align-items:center}
+.tally .cnt span{display:inline-flex;gap:6px;align-items:center}
+.verdict{margin-top:4px;font-weight:700;font-size:15px}
+.verdict.A{color:var(--a)} .verdict.I{color:var(--i)}
+.kbig{font:600 54px var(--f-code);letter-spacing:-.02em;line-height:1.1;margin:8px 0 6px}
+.kdesc{font-size:15px;margin:0 0 18px}
+.klist{display:flex;flex-direction:column;gap:6px;font:400 13px var(--f-code);color:var(--muted)}
+.klist div.cur{color:var(--ink);font-weight:600}
+.blk{margin-bottom:12px}
+.blk h4{margin:0 0 4px;font-size:14px}
+.blk h4 small{font:400 12px var(--f-code);color:var(--muted);margin-left:6px}
+.rr{display:grid;grid-template-columns:16px 1fr 56px;gap:8px;align-items:center;font:400 12.5px var(--f-code);height:26px}
+.rr .dd{color:var(--muted)} .rr b{text-align:right}
+.note{font-size:12.5px;color:var(--muted);margin:6px 0 0}
+.fml{font:500 15px var(--f-code);padding:10px 12px;background:var(--accent-soft);border-radius:6px;margin-bottom:10px}
+.fml.sm{font-size:13.5px}
+.rv{opacity:0;transition:opacity .5s} .rv.on{opacity:1}
+.draw{stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset 1.6s ease-out,opacity .3s}
+.draw.on{stroke-dashoffset:0}
+.wrow{display:grid;grid-template-columns:16px 46px 54px 1fr;gap:8px;align-items:center;height:30px;font:400 12.5px var(--f-code)}
+.wrow .bar i{opacity:.9}
+.wrow .bar.A i{background:var(--a)} .wrow .bar.I i{background:var(--i)}
+.ctbl{width:100%;border-collapse:collapse;font:400 13px var(--f-code);min-width:0}
+.ctbl th,.ctbl td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:right}
+.ctbl th{font:600 11.5px var(--f-ui);color:var(--muted)}
+.ctbl td:first-child,.ctbl th:first-child{text-align:left}
+.ctbl td.best{background:var(--accent-soft);font-weight:700}
+.accsvg text{font:400 11px var(--f-code);fill:var(--muted)}
+.accsvg .ax{stroke:var(--line)}
+.accsvg .tr{stroke:var(--muted);fill:none;stroke-width:2}
+.accsvg .cvl{stroke:var(--accent);fill:none;stroke-width:2.6}
+.accsvg .best{fill:var(--hl);stroke:var(--ink);stroke-width:2}
+.accsvg .bl{font:700 12px var(--f-ui);fill:var(--ink)}
+.lg{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:4px}
+.lg i{display:inline-block;width:16px;height:3px;vertical-align:middle;margin-right:5px}
+
+/* code rail */
+.panel{background:var(--code-bg);color:var(--code-ink);border-radius:10px;overflow:hidden;min-width:0}
+.panel .ph{display:flex;justify-content:space-between;align-items:center;padding:9px 14px;font:500 12px var(--f-ui);color:var(--code-dim);
+  letter-spacing:.06em;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,.07)}
+.code{font:400 12.5px/1.7 var(--f-code);padding:10px 0;overflow-x:auto;counter-reset:ln}
+.cl{display:block;white-space:pre;padding:0 14px 0 0;transition:background .4s}
+.cl::before{counter-increment:ln;content:counter(ln);display:inline-block;width:30px;text-align:right;margin-right:12px;color:var(--code-dim);opacity:.6}
+.cl.hl{background:var(--hlbg);box-shadow:inset 3px 0 0 var(--hl)}
+.kw{color:var(--kw)} .st{color:var(--str)} .nu{color:var(--num)} .cm{color:var(--cm);font-style:italic}
+.tok{border-radius:3px}
+.tok.flash{animation:kf 1s}
+@keyframes kf{0%{background:rgba(242,177,76,.6)}100%{background:transparent}}
+.out{font:400 12.5px/1.7 var(--f-code);padding:10px 14px;min-height:52px;max-height:300px;overflow:auto}
+.out div{white-space:pre}
+.out div.new{animation:rowin .4s}
+.out .p{color:var(--code-dim)} .out .r{color:#C7E7EE}
+.out:empty::before{content:"(출력 없음)";color:var(--code-dim)}
+
+/* controls */
+.ctrl{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.btn{appearance:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);height:38px;min-width:38px;border-radius:8px;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 10px;cursor:pointer;font:500 14px var(--f-ui)}
+.btn:hover{border-color:var(--accent)}
+.btn:focus-visible,.chipb:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.play{background:#00587C;color:#fff;border-color:#00587C;padding:0 14px}
+.btn svg{width:16px;height:16px;fill:currentColor}
+.chips{display:flex;flex-wrap:wrap;gap:6px;flex:1;min-width:0}
+.chipb{appearance:none;cursor:pointer;height:30px;min-width:30px;padding:0 8px;border-radius:6px;border:1px solid var(--line);background:var(--surface);
+  color:var(--muted);font:500 13px var(--f-ui);font-variant-numeric:tabular-nums}
+.chipb.done{color:var(--accent)}
+.chipb.cur{background:var(--accent);color:#fff;border-color:var(--accent)}
+.bar2{height:3px;background:var(--line);border-radius:2px;overflow:hidden}
+.bar2 i{display:block;height:100%;width:0;background:var(--accent);transition:width .4s}
+
+.cap{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 20px 18px}
+.cap .eb{font:500 12px var(--f-ui);color:var(--accent);letter-spacing:.08em;text-transform:uppercase}
+.cap h2{margin:2px 0 10px;font-size:20px;font-weight:700}
+.cap ul{margin:0;padding-left:1.15em;display:flex;flex-direction:column;gap:5px;max-width:76ch}
+.cap li::marker{color:var(--accent)}
+code{font-family:var(--f-code);font-size:.9em;background:var(--accent-soft);color:var(--ink);padding:1px 5px;border-radius:4px}
+.tbl{overflow-x:auto}
+table.sum{border-collapse:collapse;width:100%;min-width:520px;font-size:14px}
+table.sum th,table.sum td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+table.sum th{font-weight:600;color:var(--muted);font-size:12px}
+table.sum td:first-child{font-weight:700;white-space:nowrap}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.qsw{width:14px;height:14px;border-radius:50%;border:2px dashed var(--ink);display:inline-block}
+@media (prefers-reduced-motion: reduce){.stage *{transition-duration:.01s!important;animation-duration:.01s!important}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>kNN과 거리 척도</h1>
+    <p>거리 계산 · 다수결 · 거리 가중 · 회귀 · k 선택 · 스케일링 · 유클리드/맨해튼/상관 거리를 단계별 애니메이션으로 표현함</p>
+  </header>
+
+  <div class="main">
+    <div class="col">
+      <div class="stage-wrap" id="wrap">
+        <div class="stage" id="stage">
+          <canvas id="bnd" width="480" height="480"></canvas>
+          <svg class="plot" id="svg" viewBox="0 0 960 560" aria-hidden="true">
+            <defs><clipPath id="clip"><rect x="60" y="30" width="480" height="480"/></clipPath></defs>
+            <g id="scat">
+              <g class="axes" id="axes"></g>
+              <ellipse id="nbr" clip-path="url(#clip)" cx="300" cy="270" rx="0" ry="0"/>
+              <polygon id="dia"/>
+              <g id="lines"></g>
+              <g id="lpaths"></g>
+              <g class="tri" id="tri"></g>
+              <g class="pts" id="pts"></g>
+              <g id="labels"></g>
+              <g id="q"><circle class="ping" r="10"/><circle class="qm" r="10"/><text>?</text></g>
+              <text id="qv"></text>
+            </g>
+            <g id="prof"></g>
+          </svg>
+          <div id="side"></div>
+        </div>
+      </div>
+
+      <div class="ctrl">
+        <button class="btn" id="bPrev" aria-label="이전 장면"><svg viewBox="0 0 24 24"><path d="M15.5 5 8.5 12l7 7-1.6 1.6L5.3 12l8.6-8.6z"/></svg></button>
+        <button class="btn play" id="bPlay" aria-label="재생/일시정지"><svg viewBox="0 0 24 24" id="iPlay"><path d="M7 4.5v15l12-7.5z"/></svg><span id="lPlay">재생</span></button>
+        <button class="btn" id="bNext" aria-label="다음 장면"><svg viewBox="0 0 24 24"><path d="M8.5 5l7 7-7 7 1.6 1.6 8.6-8.6-8.6-8.6z"/></svg></button>
+        <button class="btn" id="bRe" aria-label="장면 다시 보기"><svg viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg></button>
+        <div class="chips" id="chips"></div>
+      </div>
+      <div class="bar2"><i id="prog"></i></div>
+
+      <section class="cap" aria-live="polite">
+        <div class="eb" id="capN"></div>
+        <h2 id="capT"></h2>
+        <div id="capB"></div>
+      </section>
+    </div>
+
+    <div class="col">
+      <div class="panel">
+        <div class="ph"><span>knn_activity.py</span></div>
+        <div class="code" id="code">
+<span class="cl" data-hl="0"><span class="kw">from</span> sklearn.neighbors <span class="kw">import</span> KNeighborsClassifier, KNeighborsRegressor</span>
+<span class="cl" data-hl="10"><span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler, MinMaxScaler</span>
+<span class="cl" data-hl="9"><span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> cross_val_score, LeaveOneOut</span>
+<span class="cl"> </span>
+<span class="cl" data-hl="0">X = df[[<span class="st">"LogP"</span>, <span class="st">"MW"</span>]].values   <span class="cm"># 특성 (28 × 2)</span></span>
+<span class="cl" data-hl="0">y = df[<span class="st">"active"</span>].values         <span class="cm"># 1 활성, 0 비활성</span></span>
+<span class="cl"> </span>
+<span class="cl" data-hl="10">scaler = <span class="tok" id="sTok">StandardScaler</span>()</span>
+<span class="cl" data-hl="10">X_s = scaler.fit_transform(X)</span>
+<span class="cl"> </span>
+<span class="cl" data-hl="4 5 8">knn = KNeighborsClassifier(</span>
+<span class="cl" data-hl="4 5 8 9">    n_neighbors=<span class="nu tok" id="kTok">3</span>,</span>
+<span class="cl" data-hl="6">    weights=<span class="st tok" id="wTok">"uniform"</span>,     <span class="cm"># "distance": w = 1/d</span></span>
+<span class="cl" data-hl="2 11 12">    metric=<span class="st tok" id="mTok">"euclidean"</span>)    <span class="cm"># "manhattan", "correlation"</span></span>
+<span class="cl" data-hl="0">knn.fit(X_s, y)                  <span class="cm"># 저장만 수행</span></span>
+<span class="cl"> </span>
+<span class="cl" data-hl="1 10">x_new = scaler.transform([[<span class="nu">2.5</span>, <span class="nu">350</span>]])</span>
+<span class="cl" data-hl="3 11">knn.kneighbors(x_new)</span>
+<span class="cl" data-hl="4 5 6 10 11">knn.predict(x_new)</span>
+<span class="cl" data-hl="4 5 6">knn.predict_proba(x_new)</span>
+<span class="cl"> </span>
+<span class="cl" data-hl="7">reg = KNeighborsRegressor(n_neighbors=<span class="nu">3</span>).fit(X_s, pIC50)</span>
+<span class="cl" data-hl="7">reg.predict(x_new)               <span class="cm"># 이웃 pIC50 평균</span></span>
+<span class="cl"> </span>
+<span class="cl" data-hl="9"><span class="kw">for</span> k <span class="kw">in</span> range(<span class="nu">1</span>, <span class="nu">16</span>):</span>
+<span class="cl" data-hl="9">    cross_val_score(KNeighborsClassifier(k), X_s, y, cv=LeaveOneOut()).mean()</span>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph"><span>실행 결과</span></div>
+        <div class="out" id="out"></div>
+      </div>
+      <div class="legend">
+        <span><i class="mk A"></i>활성 (1)</span>
+        <span><i class="mk I"></i>비활성 (0)</span>
+        <span><i class="qsw"></i>새 샘플</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const NS='http://www.w3.org/2000/svg';
+const stage=$('stage'), wrap=$('wrap');
+const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+function fit(){stage.style.transform='scale('+(wrap.clientWidth/960)+')';}
+new ResizeObserver(fit).observe(wrap); fit();
+
+/* ---------- data (display coords 0–1; LogP = -1 + 7x, MW = 150 + 400y) ---------- */
+const P=[
+ [.56,.55,1],[.43,.46,0],[.53,.42,1],[.37,.604,0],[.63,.37,0],[.344,.37,0],[.64,.60,1],
+ [.70,.72,1],[.78,.66,1],[.74,.82,1],[.86,.76,1],[.62,.78,1],[.82,.88,1],[.90,.62,1],[.68,.90,1],[.30,.80,1],[.86,.30,1],
+ [.12,.51,0],[.88,.49,0],[.80,.53,0],
+ [.20,.30,0],[.28,.18,0],[.14,.20,0],[.32,.28,0],[.22,.40,0],[.10,.10,0],[.40,.12,0],[.18,.62,0]
+];
+const NP=P.length, Q=[.5,.5];
+const V=P.map((p,i)=>Math.round(10*(p[2]?6.9+0.9*(p[1]-.6)+0.15*Math.sin(i*2.3):5.0+0.6*(p[0]-.4)+0.15*Math.sin(i*1.7)))/10); // pIC50
+const PX=x=>60+x*480, PY=y=>510-y*480;
+const mean=a=>a.reduce((s,v)=>s+v,0)/a.length;
+const mx=mean(P.map(p=>p[0])), my=mean(P.map(p=>p[1]));
+const sx=Math.sqrt(mean(P.map(p=>(p[0]-mx)**2))), sy=Math.sqrt(mean(P.map(p=>(p[1]-my)**2)));
+const rgx=Math.max(...P.map(p=>p[0]))-Math.min(...P.map(p=>p[0])), rgy=Math.max(...P.map(p=>p[1]))-Math.min(...P.map(p=>p[1]));
+const M={
+  z:(p,q)=>Math.hypot((p[0]-q[0])/sx,(p[1]-q[1])/sy),
+  l1:(p,q)=>Math.abs(p[0]-q[0])/sx+Math.abs(p[1]-q[1])/sy,
+  r:(p,q)=>Math.hypot(7*(p[0]-q[0]),400*(p[1]-q[1])),
+  mm:(p,q)=>Math.hypot((p[0]-q[0])/rgx,(p[1]-q[1])/rgy)
+};
+const D={}, O={};
+for(const k in M){D[k]=P.map(p=>M[k](p,Q)); O[k]=P.map((_,i)=>i).sort((a,b)=>D[k][a]-D[k][b]);}
+const DZ=D.z, OZ=O.z;
+const rank=[]; OZ.forEach((i,r)=>rank[i]=r);
+function votes(ord,k,dist){ let a=0,wa=0,wi=0; for(let j=0;j<k;j++){const i=ord[j]; a+=P[i][2]; if(dist){const w=1/dist[i]; if(P[i][2]) wa+=w; else wi+=w;}}
+  return {a,i:k-a,cls:a>k-a?'A':'I',wa,wi,wcls:wa>wi?'A':'I'}; }  // 동률 → 비활성(0): sklearn과 동일
+const f2=v=>v.toFixed(2);
+/* accuracy vs k (training / leave-one-out) */
+function predAt(pt,k,excl){const d=[]; P.forEach((p,i)=>{if(i!==excl) d.push([M.z(p,pt),p[2]]);}); d.sort((a,b)=>a[0]-b[0]); let a=0; for(let j=0;j<k;j++) a+=d[j][1]; return a>k-a?1:0;}
+const KS=[...Array(15)].map((_,i)=>i+1);
+const ACC_T=KS.map(k=>mean(P.map((p,i)=>predAt(p,k,-1)===p[2]?1:0)));
+const ACC_L=KS.map(k=>mean(P.map((p,i)=>predAt(p,k,i)===p[2]?1:0)));
+let BEST=1; KS.forEach(k=>{if(ACC_L[k-1]>ACC_L[BEST-1]) BEST=k;});
+/* response profiles for correlation distance */
+const PRO={q:[2,3,5,4,6,7],A:[5,6,8,7,9,10],B:[4,5,3,4,3,5],C:[1,1.5,2.5,2,4,12]};
+const pear=(a,b)=>{const ma=mean(a),mb=mean(b);let n=0,da=0,db=0;a.forEach((v,i)=>{n+=(v-ma)*(b[i]-mb);da+=(v-ma)**2;db+=(b[i]-mb)**2;});return n/Math.sqrt(da*db);};
+const rk=a=>{const s=a.map((v,i)=>[v,i]).sort((x,y)=>x[0]-y[0]);const r=[];let j=0;while(j<s.length){let e=j;while(e+1<s.length&&s[e+1][0]===s[j][0])e++;for(let t=j;t<=e;t++)r[s[t][1]]=(j+e)/2+1;j=e+1;}return r;};
+const CD={}; ['A','B','C'].forEach(c=>{CD[c]={e:Math.hypot(...PRO[c].map((v,i)=>v-PRO.q[i])),p:1-pear(PRO[c],PRO.q),s:1-pear(rk(PRO[c]),rk(PRO.q))};});
+window.__knn={OZ:OZ.slice(0,8),DZ:OZ.slice(0,8).map(i=>f2(DZ[i])),OL1:O.l1.slice(0,4),OR:O.r.slice(0,4),OM:O.mm.slice(0,4),V,ACC_T,ACC_L,BEST,CD,
+  w7:votes(OZ,7,DZ),v3:votes(O.l1,3),vm:votes(O.mm,3)};
+
+/* ---------- build stage ---------- */
+function el(tag,attrs,parent){const e=document.createElementNS(NS,tag); for(const k in attrs) e.setAttribute(k,attrs[k]); if(parent) parent.appendChild(e); return e;}
+(function axes(){
+  const g=$('axes');
+  for(let v=-1;v<=6;v++){const x=PX((v+1)/7); el('line',{x1:x,y1:30,x2:x,y2:510,class:'gridl'},g); el('text',{x:x,y:530,class:'tick','text-anchor':'middle'},g).textContent=v;}
+  for(let v=150;v<=550;v+=100){const y=PY((v-150)/400); el('line',{x1:60,y1:y,x2:540,y2:y,class:'gridl'},g); el('text',{x:52,y:y+4,class:'tick','text-anchor':'end'},g).textContent=v;}
+  el('rect',{x:60,y:30,width:480,height:480,class:'frame'},g);
+  el('text',{x:300,y:552,class:'atitle','text-anchor':'middle'},g).textContent='LogP';
+  el('text',{x:16,y:270,class:'atitle','text-anchor':'middle',transform:'rotate(-90 16 270)'},g).textContent='MW (Da)';
+})();
+const QX=PX(Q[0]), QY=PY(Q[1]);
+const ptEls=[], lnEls=[], lpEls=[], dlEls=[];
+P.forEach((p,i)=>{
+  const X=PX(p[0]), Y=PY(p[1]);
+  const g=el('g',{class:'pt '+(p[2]?'A':'I'),transform:`translate(${X},${Y})`},$('pts'));
+  if(p[2]) el('circle',{class:'m',r:7,style:`transition-delay:${i*35}ms`},g);
+  else el('rect',{class:'m',x:-6,y:-6,width:12,height:12,rx:2,style:`transition-delay:${i*35}ms`},g);
+  el('circle',{class:'ring',r:13},g);
+  ptEls.push(g);
+  lnEls.push(el('line',{x1:QX,y1:QY,x2:X,y2:Y,pathLength:1,class:'ln',style:`transition-delay:${rank[i]*30}ms`},$('lines')));
+  lpEls.push(el('path',{d:`M${QX},${QY} H${X} V${Y}`,pathLength:1,class:'lp'},$('lpaths')));
+  const right=p[0]>=Q[0];
+  dlEls.push(el('text',{x:X+(right?12:-12),y:Y-10,class:'dl','text-anchor':right?'start':'end'},$('labels')));
+});
+const qg=$('q'); qg.style.setProperty('--qx',QX+'px'); qg.style.setProperty('--qy',QY+'px');
+$('nbr').setAttribute('cx',QX); $('nbr').setAttribute('cy',QY);
+$('qv').setAttribute('x',QX); $('qv').setAttribute('y',QY-64); $('qv').setAttribute('text-anchor','middle');
+/* L1 diamond at 3rd neighbour */
+(function(){const R=D.l1[O.l1[2]], a=R*sx*480+12, b=R*sy*480+12;
+  const d=$('dia'); d.setAttribute('points',`${QX+a},${QY} ${QX},${QY-b} ${QX-a},${QY} ${QX},${QY+b}`); d.style.transformOrigin=`${QX}px ${QY}px`;})();
+/* right triangle example (sample #7) */
+const EX=7;
+(function(){const g=$('tri'), X=PX(P[EX][0]), Y=PY(P[EX][1]);
+  el('path',{d:`M${QX},${QY} H${X}`},g); el('path',{d:`M${X},${QY} V${Y}`},g);
+  el('text',{x:(QX+X)/2,y:QY+18,'text-anchor':'middle'},g).textContent='Δ₁ (LogP)';
+  el('text',{x:X+8,y:Y+30,'text-anchor':'start'},g).textContent='Δ₂ (MW)';})();
+/* profile chart */
+(function(){
+  const g=$('prof'), cx=i=>60+(i+.5)*80, cy=v=>510-v/13*480;
+  for(let v=0;v<=12;v+=2){el('line',{x1:60,y1:cy(v),x2:540,y2:cy(v),class:'gridl'},g); el('text',{x:52,y:cy(v)+4,class:'tick','text-anchor':'end'},g).textContent=v;}
+  for(let i=0;i<6;i++) el('text',{x:cx(i),y:530,class:'tick','text-anchor':'middle'},g).textContent='CL'+(i+1);
+  el('rect',{x:60,y:30,width:480,height:480,class:'frame'},g);
+  el('text',{x:300,y:552,class:'atitle','text-anchor':'middle'},g).textContent='세포주';
+  el('text',{x:16,y:270,class:'atitle','text-anchor':'middle',transform:'rotate(-90 16 270)'},g).textContent='약물 반응 (log)';
+  const cls={q:'q',A:'pa',B:'pb',C:'pc'}, lab={q:'새 샘플',A:'A',B:'B',C:'C'}, col={q:'var(--ink)',A:'var(--a)',B:'var(--i)',C:'var(--c)'};
+  Object.keys(PRO).forEach(k=>{
+    const pts=PRO[k].map((v,i)=>cx(i)+','+cy(v)).join(' ');
+    const pl=el('polyline',{points:pts,pathLength:1,class:'pl '+cls[k],id:'pl'+k,'stroke-dasharray':k==='q'?'1':'1'},g);
+    if(k==='q') pl.style.strokeDasharray='1';
+    const dg=el('g',{class:'pdot',id:'pd'+k},g);
+    PRO[k].forEach((v,i)=>el('circle',{cx:cx(i),cy:cy(v),r:k==='q'?5:4,fill:col[k]},dg));
+    const t=el('text',{x:cx(5)+12,y:cy(PRO[k][5])+4,class:'plab',fill:col[k]},dg); t.textContent=lab[k];
+  });
+})();
+
+/* ---------- scenes ---------- */
+const SCENES=[
+ {t:'특성 공간과 학습 데이터',b:[
+  'Model-based learning (선형·로지스틱 회귀, 신경망, 결정 트리, SVM): 데이터로부터 함수 f를 생성하여 분류/예측함',
+  'Instance-based learning (kNN): 별도 모델 생성 없이 인접 학습 데이터를 직접 사용하여 분류/예측함',
+  '예시: 화합물 28개를 <code>LogP</code>·<code>MW</code> 2개 특성으로 표현, 레이블 = 활성(●) / 비활성(■)',
+  '<code>fit()</code> = 학습 데이터 저장만 수행 (lazy learning)']},
+ {t:'새 샘플 배치',b:[
+  '레이블을 모르는 새 화합물(LogP 2.5, MW 350)을 같은 특성 공간에 배치함',
+  '목표: 주변 학습 샘플의 레이블만으로 활성 여부 예측',
+  '가정: 특성 공간에서 가까운 화합물 = 성질이 유사한 화합물']},
+ {t:'유클리드 거리 계산',b:[
+  '새 샘플과 모든 학습 샘플(n = 28) 사이 거리 계산',
+  '유클리드 거리 = 대응 특성 값 차이 제곱합의 제곱근 → 두 점 사이 직선 거리',
+  '2차원에서는 Δ₁, Δ₂를 두 변으로 하는 직각삼각형의 빗변 길이, n차원으로 그대로 확장 가능',
+  '표시 거리 = 표준화된 특성 기준 (장면 11 참고)']},
+ {t:'거리 정렬',b:[
+  '계산된 거리를 오름차순 정렬 → 1st nearest, 2nd nearest, …',
+  '상위 순위 샘플 = 새 샘플과 가장 유사한 화합물',
+  '<code>kneighbors()</code> = 상위 k개 이웃의 거리와 인덱스 반환']},
+ {t:'k = 3 이웃 다수결',b:[
+  '가장 가까운 3개 이웃의 레이블: 활성 2, 비활성 1',
+  '다수결(majority voting) → 예측 = 활성',
+  '<code>predict_proba</code> = 이웃 중 각 클래스 비율 → [P(비활성), P(활성)] = [0.33, 0.67]']},
+ {t:'k = 7 이웃 다수결',b:[
+  'k = 7로 늘리면 활성 3, 비활성 4 → 예측 = 비활성으로 바뀜',
+  '같은 데이터라도 k에 따라 결과가 달라짐 → k = 핵심 hyperparameter',
+  '이진 분류에서는 동률 방지를 위해 홀수 k 사용']},
+ {t:'거리 가중 투표',b:[
+  '다수결은 k개 이웃을 동일 비중으로 취급 → 멀리 있는 이웃도 1표 행사',
+  '<code>weights="distance"</code>: 각 이웃에 가중치 w = 1/d 부여, 클래스별 가중치 합으로 결정',
+  'k = 7 다수결: 비활성 4 : 활성 3 → 비활성 / 거리 가중: 가까운 활성 이웃의 가중치 합이 더 큼 → 활성',
+  '가까운 이웃의 영향 확대, k 선택에 대한 민감도 감소']},
+ {t:'kNN 회귀',b:[
+  'kNN 회귀(regression) = 인접 k개 학습 데이터 목표값의 평균을 예측값으로 반환',
+  '예시: 각 화합물의 pIC50 값 → 새 샘플 예측값 = 3개 이웃 pIC50 평균',
+  '<code>weights="distance"</code> 지정 시 거리 가중 평균 사용',
+  '학습 데이터 범위 밖의 값은 예측 불가 (외삽 불가), 예측 함수가 계단 형태']},
+ {t:'k에 따른 결정 경계',b:[
+  '특성 공간 전체를 kNN으로 분류한 결과 = 결정 경계(decision boundary)',
+  'k 작음 → 데이터의 지역적 특성까지 반영, 경계 복잡 (overfitting)',
+  'k 큼 → 다른 범주의 개체를 많이 포함, 경계 단순 (underfitting)',
+  'k = N(28) → 모든 위치에서 다수 클래스(비활성)만 예측']},
+ {t:'교차검증 기반 k 선택',b:[
+  'Parameter = 데이터로부터 컴퓨터가 찾는 값 / Hyperparameter = 분석자가 정하는 조건 (k, 거리 척도)',
+  '훈련 정확도: k = 1에서 1.0 → 자기 자신이 최근접 이웃이므로 일반화 성능 지표로 부적합',
+  'Leave-one-out 교차검증: 샘플 1개씩 제외 후 나머지로 예측, 정확도 평균',
+  '교차검증 정확도가 가장 높은 k 선택']},
+ {t:'특성 스케일링 (표준화와 정규화)',b:[
+  '원 단위: LogP 범위 ≈ 7, MW 범위 ≈ 400 → 거리 값이 MW 차이에 의해 거의 결정됨, 예측 = 비활성',
+  '표준화(standardization): <code>z = (x − μ) / σ</code> → 평균 0, 표준편차 1',
+  '정규화(normalization, min-max): <code>x′ = (x − min) / (max − min)</code> → 0~1 범위',
+  '스케일링 후 두 특성이 동등하게 기여, 예측 = 활성 → 거리 기반 모델의 필수 전처리']},
+ {t:'맨해튼 거리',b:[
+  '맨해튼 거리(L1) = 특성 차이 절댓값의 합 → 격자 도로를 따라 이동한 거리',
+  '유클리드 거리(L2) = 직선 거리 / 같은 거리 영역의 모양: 원(L2) vs 마름모(L1)',
+  '일반화: Minkowski 거리 <code>d = (Σ|qᵢ − pᵢ|ᵖ)^(1/p)</code>, p = 1 맨해튼, p = 2 유클리드',
+  '거리 척도에 따라 이웃 순위가 바뀔 수 있음 → 거리 척도도 hyperparameter']},
+ {t:'상관 거리 (Pearson · Spearman)',b:[
+  '상관 거리 = 1 − r, 값의 크기가 아닌 프로파일 패턴의 유사성 측정',
+  '예시: 세포주 6종 약물 반응 프로파일 비교',
+  '유클리드: 크기가 비슷한 B가 최근접 / Pearson: 패턴이 같은 A가 최근접 (선형 관계)',
+  'Spearman: 순위 기반 → 비선형 단조 관계(C)와 이상치에도 강건',
+  '유전자 발현·약물 반응 프로파일처럼 패턴이 중요한 데이터에 사용']},
+ {t:'kNN 정리',table:[
+  ['학습 방식','Instance-based (lazy learning): 별도 모델 생성 없이 학습 데이터 저장'],
+  ['분류','인접 k개 다수결 또는 거리 가중(1/d) 투표'],
+  ['회귀','인접 k개 목표값의 평균 또는 거리 가중 평균'],
+  ['Hyperparameter','k, 거리 척도(metric), 가중 방식(weights)'],
+  ['k 선택','교차검증 정확도 최대 k / k 작음 → overfitting, k 큼 → underfitting'],
+  ['거리 척도','유클리드(L2), 맨해튼(L1), 상관 거리(Pearson·Spearman), 분자 fingerprint → Tanimoto(Jaccard) 거리'],
+  ['전처리','표준화(z-score) 또는 정규화(min-max) 필수'],
+  ['장점','구현 단순, 비선형 결정 경계 표현, 적절한 k에서 노이즈 영향 적음, 학습 데이터가 많을수록 효과적'],
+  ['한계','최적 k·거리 척도 선택 필요, 예측 시 전체 학습 데이터와 거리 계산 → 메모리·시간 비용 큼, 고차원에서 거리 구분력 저하 (차원의 저주)']]}
+];
+const N=SCENES.length;
+
+function state(s,p){
+  const R=(S,P_)=>s>S||(s===S&&p>=P_);
+  const top=(o,n)=>o.slice(0,n);
+  const st={scat:true,prof:false,axes:R(0,0),pts:R(0,0),q:R(1,0),lines:[],kl:false,labels:[],lt:'z',nb:[],dim:false,ell:null,dia:false,lp:[],tri:false,
+    bnd:0,panel:'',k:3,w:'uniform',m:'euclidean',sc:'StandardScaler',qc:'',qv:'',tally:false,ringW:false,rp:p,hot:[],sp:0,out:[]};
+  switch(s){
+    case 2: st.lines=OZ.slice(); if(p>=1) st.labels=top(OZ,7); if(p>=2) st.tri=true; st.panel='formula'; break;
+    case 3: st.lines=p>=1?top(OZ,8):OZ.slice(); st.labels=top(OZ,8); st.panel='rank'; st.k=0; break;
+    case 4: case 5: case 13: {
+      const k=s===5?7:3; st.k=k; st.panel='rank'; st.tally=true; st.lines=top(OZ,k); st.kl=true; st.ell={t:'z',k};
+      if(s===13){st.rp=99; p=99; st.bnd=3;}
+      if(p>=1){st.nb=top(OZ,k); st.dim=true; st.labels=top(OZ,k);}
+      if(p>=2) st.qc=votes(OZ,k).cls; break;}
+    case 6: st.k=7; st.panel='wvote'; st.lines=top(OZ,7); st.kl=true; st.ell={t:'z',k:7}; st.nb=top(OZ,7); st.dim=true; st.labels=top(OZ,7);
+      if(p>=1){st.w='distance'; st.ringW=true;} st.qc=p>=2?votes(OZ,7,DZ).wcls:votes(OZ,7).cls; break;
+    case 7: st.panel='reg'; st.lines=top(OZ,3); st.kl=true; st.ell={t:'z',k:3}; st.nb=top(OZ,3); st.dim=true; st.labels=top(OZ,3); st.lt='v';
+      if(p>=1) st.qv='≈ '+mean(top(OZ,3).map(i=>V[i])).toFixed(2); break;
+    case 8: st.bnd=[1,3,7,15,28][Math.max(0,Math.min(p,4))]; st.k=st.bnd; st.panel='k'; break;
+    case 9: st.panel='acc'; if(p>=2){st.bnd=BEST; st.k=BEST;} break;
+    case 10:
+      st.panel='scale'; st.kl=true;
+      if(p<2){st.ell={t:'r',k:3}; st.lines=top(O.r,3); if(p>=1){st.nb=top(O.r,3); st.dim=true; st.qc=votes(O.r,3).cls;}}
+      else if(p===2){st.ell={t:'z',k:3}; st.lines=top(OZ,3); st.nb=top(OZ,3); st.dim=true; st.qc=votes(OZ,3).cls; st.labels=top(OZ,3);}
+      else {st.sc='MinMaxScaler'; st.ell={t:'mm',k:3}; st.lines=top(O.mm,3); st.nb=top(O.mm,3); st.dim=true; st.qc=votes(O.mm,3).cls;}
+      break;
+    case 11: st.panel='metric';
+      if(p<1){st.ell={t:'z',k:3}; st.lines=top(OZ,3); st.kl=true; st.nb=top(OZ,3); st.dim=true; st.labels=top(OZ,3); st.qc=votes(OZ,3).cls;}
+      else {st.m='manhattan'; st.dia=true; st.lp=top(O.l1,3); st.nb=top(O.l1,3); st.dim=true; st.labels=top(O.l1,3); st.lt='l1'; st.qc=votes(O.l1,3).cls;}
+      break;
+    case 12: st.scat=false; st.prof=true; st.panel='corr'; st.m='correlation'; st.hot=[[],['B'],['A'],['A','C']][Math.max(0,Math.min(p,3))]; break;
+  }
+  const o=st.out;
+  if(R(3,1)){const t=top(OZ,3); o.push(['knn.kneighbors(x_new)',`(array([[${t.map(i=>f2(DZ[i])).join(', ')}]]), array([[${t.join(', ')}]]))`]);}
+  if(R(4,2)){const v=votes(OZ,3); o.push(['knn.predict(x_new)',`array([${v.cls==='A'?1:0}])   # 활성`]); o.push(['knn.predict_proba(x_new)',`array([[${f2(v.i/3)}, ${f2(v.a/3)}]])`]);}
+  if(R(5,2)){const v=votes(OZ,7); o.push(['# n_neighbors=7',`predict → array([${v.cls==='A'?1:0}])   # 비활성`]);}
+  if(R(6,2)){const v=votes(OZ,7,DZ); const t=v.wa+v.wi; o.push(['# n_neighbors=7, weights="distance"',`predict → array([${v.wcls==='A'?1:0}])   # 활성,  proba → [[${f2(v.wi/t)}, ${f2(v.wa/t)}]]`]);}
+  if(R(7,1)){o.push(['reg.predict(x_new)',`array([${mean(top(OZ,3).map(i=>V[i])).toFixed(2)}])`]);}
+  if(R(9,2)){o.push(['# LOO 교차검증',`best k = ${BEST},  정확도 = ${f2(ACC_L[BEST-1])}`]);}
+  if(R(10,1)){o.push(['# 스케일링 없이 원 단위 거리',`predict → array([${votes(O.r,3).cls==='A'?1:0}])   # 비활성`]);}
+  if(R(10,2)){o.push(['# StandardScaler',`predict → array([${votes(OZ,3).cls==='A'?1:0}])   # 활성`]);}
+  if(R(10,3)){o.push(['# MinMaxScaler',`predict → array([${votes(O.mm,3).cls==='A'?1:0}])   # ${votes(O.mm,3).cls==='A'?'활성':'비활성'}`]);}
+  if(R(11,1)){o.push(['# metric="manhattan"',`kneighbors → [${top(O.l1,3).join(', ')}],  predict → array([${votes(O.l1,3).cls==='A'?1:0}])`]);}
+  if(R(12,3)){o.push(['# 프로파일 최근접 이웃',`euclidean → B,  pearson → A,  spearman → A, C (동률)`]);}
+  return st;
+}
+
+/* ---------- ellipse tween ---------- */
+let ellCur={rx:0,ry:0}, ellRaf=0;
+function ellTarget(e){
+  if(!e) return {rx:0,ry:0};
+  const R=D[e.t][O[e.t][e.k-1]];
+  if(e.t==='z') return {rx:R*sx*480+12, ry:R*sy*480+12};
+  if(e.t==='mm') return {rx:R*rgx*480+12, ry:R*rgy*480+12};
+  return {rx:R/7*480+12, ry:R/400*480+12};
+}
+function setEll(t,instant){
+  cancelAnimationFrame(ellRaf);
+  const n=$('nbr');
+  if(instant||reduced){ellCur={...t}; n.setAttribute('rx',t.rx); n.setAttribute('ry',t.ry); return;}
+  const f={...ellCur}, t0=performance.now(), Dd=1000;
+  const step=now=>{const u=Math.min(1,(now-t0)/Dd), e=1-Math.pow(1-u,3);
+    ellCur={rx:f.rx+(t.rx-f.rx)*e, ry:f.ry+(t.ry-f.ry)*e};
+    n.setAttribute('rx',Math.max(0,ellCur.rx)); n.setAttribute('ry',Math.max(0,ellCur.ry));
+    if(u<1) ellRaf=requestAnimationFrame(step);};
+  ellRaf=requestAnimationFrame(step);
+}
+
+/* ---------- decision boundary ---------- */
+const cv=$('bnd'), cx=cv.getContext('2d'); let bndK=0, bndTimer=0;
+function drawBnd(k){
+  const cs=getComputedStyle(document.documentElement);
+  const ca=cs.getPropertyValue('--a').trim(), ci=cs.getPropertyValue('--i').trim();
+  cx.clearRect(0,0,480,480); const C=6;
+  for(let gx=0;gx<480;gx+=C) for(let gy=0;gy<480;gy+=C){
+    cx.fillStyle=predAt([(gx+C/2)/480,1-(gy+C/2)/480],k,-1)?ca:ci; cx.globalAlpha=.2; cx.fillRect(gx,gy,C,C);
+  }
+  cx.globalAlpha=1;
+}
+function setBnd(k,instant){
+  clearTimeout(bndTimer);
+  if(k===bndK) return;
+  bndK=k;
+  if(!k){cv.style.opacity=0; return;}
+  if(instant){drawBnd(k); cv.style.opacity=1; return;}
+  cv.style.opacity=0;
+  bndTimer=setTimeout(()=>{drawBnd(k); cv.style.opacity=1;},300);
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(bndK) drawBnd(bndK);});
+new MutationObserver(()=>{if(bndK) drawBnd(bndK);}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+
+/* ---------- side panel ---------- */
+let sideSig='';
+const mk=i=>`<i class="mk ${P[i][2]?'A':'I'}"></i>`;
+const MKA='<i class="mk A"></i>', MKI='<i class="mk I"></i>';
+const lbl=c=>c==='A'?'활성':'비활성';
+function sideHTML(st){
+  switch(st.panel){
+  case 'formula':{
+    const dx=(P[EX][0]-Q[0])/sx, dy=(P[EX][1]-Q[1])/sy;
+    return `<div class="sh">유클리드 거리 (Euclidean distance)</div>
+      <div class="fml">d(p, q) = √ Σᵢ (qᵢ − pᵢ)²</div>
+      <div class="fml sm">2차원: d = √(Δ₁² + Δ₂²)</div>
+      <div class="rv" data-r="2"><p class="note" style="margin:0 0 6px">예: 샘플 #${EX} (표준화 값 기준)</p>
+      <div class="fml sm">Δ₁ (LogP) = ${f2(Math.abs(dx))}<br>Δ₂ (MW) = ${f2(Math.abs(dy))}<br>d = √(${f2(Math.abs(dx))}² + ${f2(Math.abs(dy))}²) = ${f2(DZ[EX])}</div></div>`;}
+  case 'rank':{
+    const t=OZ.slice(0,8), mxd=DZ[t[7]];
+    let h='<div class="sh">거리 순위 (표준화 유클리드 거리)</div>';
+    t.forEach((i,r)=>{
+      if(st.kl && r===st.k) h+=`<div class="kcut">k = ${st.k}</div>`;
+      h+=`<div class="rk ${st.kl&&r<st.k?'in':''}" style="--d:${r*.12}s"><span class="n">${r+1}</span>${mk(i)}<b>${f2(DZ[i])}</b><span class="bar"><i style="width:${DZ[i]/mxd*100}%"></i></span></div>`;
+    });
+    if(st.tally){const v=votes(OZ,st.k);
+      h+=`<div class="tally rv" data-r="1"><div class="cnt"><span>${MKA}활성 ${v.a}</span><span>${MKI}비활성 ${v.i}</span></div>
+        <div class="verdict ${v.cls} rv" data-r="2">→ 예측: ${lbl(v.cls)}</div></div>`;}
+    return h;}
+  case 'wvote':{
+    const t=OZ.slice(0,7), v=votes(OZ,7,DZ), wmax=1/DZ[t[0]];
+    let h='<div class="sh">k = 7 이웃의 가중치 w = 1/d</div>';
+    t.forEach((i,r)=>{const w=1/DZ[i]; h+=`<div class="wrow" style="animation:rowin .4s both;animation-delay:${r*.08}s">${mk(i)}<span>d ${f2(DZ[i])}</span><span class="rv" data-r="1">w ${f2(w)}</span><span class="bar ${P[i][2]?'A':'I'} rv" data-r="1"><i style="width:${w/wmax*100}%"></i></span></div>`;});
+    h+=`<div class="tally"><div class="cnt">다수결:&nbsp;<span>${MKA}${v.a}</span><span>${MKI}${v.i}</span></div><div class="verdict ${v.cls}">→ ${lbl(v.cls)}</div></div>`;
+    h+=`<div class="tally rv" data-r="2"><div class="cnt">가중치 합:&nbsp;<span>${MKA}${f2(v.wa)}</span><span>${MKI}${f2(v.wi)}</span></div><div class="verdict ${v.wcls}">→ ${lbl(v.wcls)}</div></div>`;
+    return h;}
+  case 'reg':{
+    const t=OZ.slice(0,3), m=mean(t.map(i=>V[i]));
+    const ws=t.map(i=>1/DZ[i]), mw=t.reduce((s,i,j)=>s+ws[j]*V[i],0)/ws.reduce((a,b)=>a+b,0);
+    let h='<div class="sh">k = 3 이웃의 pIC50</div>';
+    t.forEach((i,r)=>{h+=`<div class="rr" style="animation:rowin .4s both;animation-delay:${r*.12}s">${mk(i)}<span class="dd">d ${f2(DZ[i])}</span><b>${V[i].toFixed(1)}</b></div>`;});
+    h+=`<div class="rv" data-r="1" style="margin-top:12px"><div class="fml sm">평균 = (${t.map(i=>V[i].toFixed(1)).join(' + ')}) / 3<br>= ${m.toFixed(2)}</div>
+      <p class="note">거리 가중 평균 (weights="distance") = ${mw.toFixed(2)}</p>
+      <p class="note">예측값 범위 ⊂ 학습 데이터 목표값 범위 (외삽 불가)</p></div>`;
+    return h;}
+  case 'k':{
+    const desc={1:'지역적 특성까지 반영 · 경계 복잡 (overfitting)',3:'국소 구조 반영',7:'경계 완만해짐',15:'경계 단순 (underfitting 경향)',28:'k = N → 항상 다수 클래스(비활성) 예측'};
+    return `<div class="sh">결정 경계</div><div class="kbig">k = ${st.k}</div><p class="kdesc">${desc[st.k]}</p>`+
+      `<div class="klist">${[1,3,7,15,28].map(k=>`<div class="${k===st.k?'cur':''}">k = ${String(k).padStart(2)}${k===28?' (N)':''}  ${k===st.k?'◀':''}</div>`).join('')}</div>`+
+      `<p class="note" style="margin-top:18px">배경 색 = 해당 위치에 새 샘플이 놓였을 때의 예측 클래스</p>`;}
+  case 'acc':{
+    const W=330,H=250,l=36,r=10,tp=12,b=30, y0=.5, xs=k=>l+(k-1)/14*(W-l-r), ys=a=>tp+(1-(a-y0)/(1-y0))*(H-tp-b);
+    let s=`<svg class="accsvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
+    [.5,.6,.7,.8,.9,1].forEach(a=>{s+=`<line class="ax" x1="${l}" x2="${W-r}" y1="${ys(a)}" y2="${ys(a)}"/><text x="${l-6}" y="${ys(a)+4}" text-anchor="end">${a.toFixed(1)}</text>`;});
+    [1,3,5,7,9,11,13,15].forEach(k=>{s+=`<text x="${xs(k)}" y="${H-12}" text-anchor="middle">${k}</text>`;});
+    s+=`<text x="${(l+W-r)/2}" y="${H}" text-anchor="middle">k (neighbors)</text>`;
+    s+=`<polyline class="tr draw rv" data-r="0" pathLength="1" points="${KS.map(k=>xs(k)+','+ys(ACC_T[k-1])).join(' ')}"/>`;
+    s+=`<polyline class="cvl draw rv" data-r="1" pathLength="1" points="${KS.map(k=>xs(k)+','+ys(ACC_L[k-1])).join(' ')}"/>`;
+    s+=`<g class="rv" data-r="2"><circle class="best" cx="${xs(BEST)}" cy="${ys(ACC_L[BEST-1])}" r="8"/><text class="bl" x="${xs(BEST)}" y="${ys(ACC_L[BEST-1])-16}" text-anchor="middle">Best k = ${BEST}</text></g>`;
+    s+='</svg>';
+    return `<div class="sh">k에 따른 정확도</div>${s}<div class="lg"><span><i style="background:var(--muted)"></i>Training</span><span><i style="background:var(--accent)"></i>LOO 교차검증</span></div>
+      <p class="note rv" data-r="2">LOO 정확도 최대 = ${f2(ACC_L[BEST-1])} (k = ${BEST}) → 결정 경계 표시</p>`;}
+  case 'scale':{
+    const blk=(title,sub,ord,dist,fmt,r0)=>{const v=votes(ord,3);
+      let h=`<div class="blk rv" data-r="${r0}"><h4>${title}<small>${sub}</small></h4>`;
+      ord.slice(0,3).forEach(i=>{h+=`<div class="rr">${mk(i)}<span class="dd">${fmt(i)}</span><b>${dist[i]<10?f2(dist[i]):dist[i].toFixed(1)}</b></div>`;});
+      return h+`<div class="verdict ${v.cls} rv" data-r="${r0===0?1:r0}">→ 예측: ${lbl(v.cls)}</div></div>`;};
+    return '<div class="sh">스케일링 방식별 k = 3 이웃</div>'+
+      blk('원 단위 거리','LogP, MW',O.r,D.r,i=>`ΔLogP ${Math.abs(7*(P[i][0]-Q[0])).toFixed(2)} · ΔMW ${Math.abs(400*(P[i][1]-Q[1])).toFixed(0)}`,0)+
+      blk('표준화','z = (x − μ)/σ',OZ,DZ,i=>`#${i}`,2)+
+      blk('정규화','x′ = (x − min)/(max − min)',O.mm,D.mm,i=>`#${i}`,3);}
+  case 'metric':{
+    const b2=(title,f,ord,dist,r0)=>{const v=votes(ord,3); let h=`<div class="blk rv" data-r="${r0}"><h4>${title}</h4><div class="fml sm">${f}</div>`;
+      ord.slice(0,3).forEach((i,r)=>{h+=`<div class="rr">${mk(i)}<span class="dd">${r+1}위 · #${i}</span><b>${f2(dist[i])}</b></div>`;});
+      return h+`<div class="verdict ${v.cls}">→ 예측: ${lbl(v.cls)}</div></div>`;};
+    return '<div class="sh">거리 척도별 k = 3 이웃</div>'+
+      b2('유클리드 (L2)','d = √ Σ (qᵢ − pᵢ)²',OZ,DZ,0)+b2('맨해튼 (L1)','d = Σ |qᵢ − pᵢ|',O.l1,D.l1,1);}
+  case 'corr':{
+    const cols=[['e','유클리드',1],['p','1 − Pearson',2],['s','1 − Spearman',3]];
+    const mins={}; cols.forEach(([c])=>{mins[c]=Math.min(...['A','B','C'].map(x=>CD[x][c]));});
+    let h='<div class="sh">새 샘플과의 거리</div><table class="ctbl"><thead><tr><th>후보</th>'+cols.map(([c,t,r])=>`<th class="rv" data-r="${r}">${t}</th>`).join('')+'</tr></thead><tbody>';
+    ['A','B','C'].forEach(x=>{h+=`<tr><td>${x}</td>`+cols.map(([c,,r])=>`<td class="rv ${Math.abs(CD[x][c]-mins[c])<1e-9?'best':''}" data-r="${r}">${f2(CD[x][c])}</td>`).join('')+'</tr>';});
+    h+='</tbody></table>';
+    h+=`<p class="note">A: 새 샘플 + 3 (패턴 동일, 크기 다름)<br>B: 크기 비슷, 패턴 다름<br>C: 순위 동일, 비선형 + 이상치(CL6)</p>
+      <div class="fml sm rv" data-r="2" style="margin-top:10px">Pearson r = cov(x, y) / (σₓ σᵧ)</div>
+      <div class="fml sm rv" data-r="3">Spearman ρ = 순위 변환 값의 Pearson r</div>`;
+    return h;}
+  }
+  return '';
+}
+
+/* ---------- render ---------- */
+let instant=false;
+function setTok(id,v){const t=$(id); if(t.textContent!==v){t.textContent=v; if(!instant){t.classList.remove('flash'); void t.offsetWidth; t.classList.add('flash');}}}
+function render(s,p){
+  const st=state(s,p);
+  $('scat').classList.toggle('off',!st.scat); $('prof').classList.toggle('on',st.prof);
+  $('axes').classList.toggle('on',st.axes);
+  const nb=new Set(st.nb), wmax=st.ringW?Math.max(...st.nb.map(i=>1/DZ[i])):1;
+  ptEls.forEach((g,i)=>{g.classList.toggle('on',st.pts); g.classList.toggle('nb',nb.has(i));
+    g.querySelector('.ring').style.strokeWidth=st.ringW&&nb.has(i)?(1.2+4.5*(1/DZ[i])/wmax)+'px':'';});
+  $('pts').classList.toggle('dim',st.dim);
+  const ls=new Set(st.lines);
+  lnEls.forEach((l,i)=>{l.classList.toggle('on',ls.has(i)); l.classList.toggle('k',st.kl&&ls.has(i));});
+  const lp=new Set(st.lp); lpEls.forEach((l,i)=>l.classList.toggle('on',lp.has(i)));
+  const lb=new Set(st.labels), dsrc={z:DZ,l1:D.l1}[st.lt];
+  dlEls.forEach((t,i)=>{t.textContent=st.lt==='v'?'pIC50 '+V[i].toFixed(1):f2(dsrc[i]); t.classList.toggle('on',lb.has(i));});
+  $('tri').classList.toggle('on',st.tri);
+  qg.classList.toggle('on',st.q); qg.classList.toggle('A',st.qc==='A'); qg.classList.toggle('I',st.qc==='I');
+  const qv=$('qv'); if(st.qv) qv.textContent='pIC50 '+st.qv; qv.classList.toggle('on',!!st.qv);
+  $('nbr').classList.toggle('on',!!st.ell);
+  if(st.ell) setEll(ellTarget(st.ell),instant); else setEll({rx:0,ry:0},instant);
+  $('dia').classList.toggle('on',st.dia);
+  setBnd(st.bnd,instant);
+  ['q','A','B','C'].forEach(k=>{const hot=st.hot.includes(k), dim=st.hot.length&&!hot&&k!=='q';
+    $('pl'+k).classList.toggle('hot',hot); $('pl'+k).classList.toggle('dimp',!!dim); $('pd'+k).classList.toggle('dimp',!!dim);});
+  const sig=JSON.stringify([st.panel,st.k,st.kl,st.tally]);
+  const side=$('side'); side.classList.toggle('on',!!st.panel);
+  if(sig!==sideSig){sideSig=sig; side.innerHTML=st.panel?sideHTML(st):''; void side.offsetWidth;}
+  side.querySelectorAll('[data-r]').forEach(e=>e.classList.toggle('on',st.rp>=+e.dataset.r));
+  setTok('kTok',String(st.k||3)); setTok('wTok',`"${st.w}"`); setTok('mTok',`"${st.m}"`); setTok('sTok',st.sc);
+  const out=$('out'), sigO=JSON.stringify(st.out);
+  if(out.dataset.sig!==sigO){
+    const prev=JSON.parse(out.dataset.sig||'[]').length; out.dataset.sig=sigO; out.innerHTML='';
+    st.out.forEach(([c,r],j)=>{const a=document.createElement('div'); a.innerHTML=`<span class="p">&gt;&gt;&gt; ${c}</span>`; const b=document.createElement('div'); b.className='r'; b.textContent=r;
+      if(j>=prev&&!instant){a.classList.add('new'); b.classList.add('new');} out.append(a,b);});
+    out.scrollTop=out.scrollHeight;
+  }
+}
+function renderStatic(s){
+  document.querySelectorAll('#code .cl').forEach(l=>l.classList.toggle('hl',(l.dataset.hl||'').split(' ').includes(String(s))));
+  const sc=SCENES[s];
+  $('capN').textContent='장면 '+(s+1)+' / '+N; $('capT').textContent=sc.t;
+  $('capB').innerHTML=sc.table
+    ? '<div class="tbl"><table class="sum"><thead><tr><th>항목</th><th>내용</th></tr></thead><tbody>'+sc.table.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')+'</tbody></table></div>'
+    : '<ul>'+sc.b.map(x=>'<li>'+x+'</li>').join('')+'</ul>';
+  document.querySelectorAll('.chipb').forEach((c,i)=>{c.classList.toggle('cur',i===s); c.classList.toggle('done',i<s); c.setAttribute('aria-current',i===s?'step':'false');});
+  $('prog').style.width=(s/(N-1)*100)+'%';
+}
+
+/* ---------- playback ---------- */
+let token={c:false};
+const chk=tk=>{if(tk.c) throw 'x';};
+const sleep=(ms,tk)=>new Promise(r=>setTimeout(r,reduced?Math.min(ms,300):ms)).then(()=>chk(tk));
+function ping(){qg.classList.remove('ping'); void qg.getBoundingClientRect(); qg.classList.add('ping');}
+const seq=(...steps)=>async c=>{for(const [ph,ms] of steps){c.ph(ph); await c.w(ms);}};
+const SCRIPTS=[
+ seq([0,2000]),
+ async c=>{c.ph(0); await c.w(900); ping(); await c.w(1600);},
+ seq([0,1700],[1,1300],[2,1600]),
+ seq([0,1600],[1,700]),
+ seq([0,1300],[1,1000],[2,300]),
+ seq([0,1300],[1,1000],[2,300]),
+ seq([0,1500],[1,1900],[2,500]),
+ seq([0,1500],[1,800]),
+ seq([0,1800],[1,1800],[2,1800],[3,1800],[4,500]),
+ seq([0,1900],[1,1900],[2,800]),
+ seq([0,1600],[1,2200],[2,1800],[3,1200]),
+ seq([0,1800],[1,1600]),
+ seq([0,1800],[1,1600],[2,1600],[3,800]),
+ seq([0,1500])
+];
+let cur=-1, playing=false, holdTimer=0;
+async function go(s){
+  s=Math.max(0,Math.min(N-1,s));
+  token.c=true; clearTimeout(holdTimer);
+  const tk={c:false}; token=tk;
+  if(s!==cur+1){instant=true; stage.classList.add('no-anim'); render(Math.max(0,s-1), s===0?-1:99); void stage.offsetWidth; stage.classList.remove('no-anim'); instant=false;}
+  cur=s; renderStatic(s);
+  const c={ph:p=>{chk(tk); render(s,p);}, w:ms=>sleep(ms,tk)};
+  try{await SCRIPTS[s](c);}catch(e){return;}
+  if(playing&&!tk.c){
+    if(s<N-1) holdTimer=setTimeout(()=>{if(playing&&token===tk) go(s+1);}, reduced?2500:4800);
+    else setPlay(false);
+  }
+}
+function setPlay(v){
+  playing=v; $('lPlay').textContent=v?'일시정지':'재생';
+  $('iPlay').innerHTML=v?'<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>':'<path d="M7 4.5v15l12-7.5z"/>';
+  if(!v) clearTimeout(holdTimer);
+}
+SCENES.forEach((sc,i)=>{const b=document.createElement('button'); b.className='chipb'; b.textContent=i+1; b.title=sc.t; b.setAttribute('aria-label','장면 '+(i+1)+': '+sc.t); b.onclick=()=>{setPlay(false); go(i);}; $('chips').appendChild(b);});
+$('bPrev').onclick=()=>{setPlay(false); go(cur-1);};
+$('bNext').onclick=()=>{setPlay(false); go(cur+1);};
+$('bRe').onclick=()=>{go(cur);};
+$('bPlay').onclick=()=>{ if(playing){setPlay(false);return;} setPlay(true); if(cur===N-1){cur=-2; go(0);} else go(cur+1); };
+document.addEventListener('keydown',e=>{
+  if(e.key===' '&&e.target.closest&&e.target.closest('button')) return;
+  if(e.key==='ArrowRight'){setPlay(false); go(cur+1);}
+  else if(e.key==='ArrowLeft'){setPlay(false); go(cur-1);}
+  else if(e.key===' '){e.preventDefault(); $('bPlay').click();}
+});
+
+instant=true; stage.classList.add('no-anim'); render(0,-1); void stage.offsetWidth; stage.classList.remove('no-anim'); instant=false;
+setPlay(!reduced); go(0);
+})();
+</script>
+
+</body></html>

@@ -1,0 +1,803 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>모델 구축을 위한 데이터 준비</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<style>
+/* Layout: one 16:9 motion stage rebuilt per scene (SVG + HTML layer) + controls + caption */
+:root{
+  --bg:#F2F6F7; --surface:#FFFFFF; --ink:#0F2A35; --muted:#5A6F78; --line:#D2DEE2; --grid:rgba(0,88,124,.08);
+  --s1:#00587C; --s2:#008EAA; --s3:#64CCC9;
+  --pos:#D9822B; --neg:#008EAA; --err:#C8524A;
+  --okbg:rgba(100,204,201,.22); --errbg:rgba(200,82,74,.13); --soft:#E3F4F8; --hot:rgba(224,149,42,.25);
+  --f-ui:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --f-code:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0A181E; --surface:#11252D; --ink:#E3EDF0; --muted:#8EA4AC; --line:#25424C; --grid:rgba(100,204,201,.07);
+  --s1:#5DB3D4; --s2:#3DBBD3; --s3:#64CCC9; --pos:#F0A04B; --neg:#3DBBD3; --err:#E77A70;
+  --okbg:rgba(100,204,201,.18); --errbg:rgba(231,122,112,.16); --soft:#0F3140; --hot:rgba(242,177,76,.25); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0A181E; --surface:#11252D; --ink:#E3EDF0; --muted:#8EA4AC; --line:#25424C; --grid:rgba(100,204,201,.07);
+  --s1:#5DB3D4; --s2:#3DBBD3; --s3:#64CCC9; --pos:#F0A04B; --neg:#3DBBD3; --err:#E77A70;
+  --okbg:rgba(100,204,201,.18); --errbg:rgba(231,122,112,.16); --soft:#0F3140; --hot:rgba(242,177,76,.25); color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:15px;line-height:1.6}
+.wrap{max-width:1120px;margin:0 auto;padding-inline:20px;padding-block:24px 40px;display:flex;flex-direction:column;gap:14px}
+header.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px}
+header.top h1{margin:0;font-size:26px;font-weight:700;letter-spacing:-.01em}
+header.top p{margin:0;color:var(--muted);font-size:14px}
+
+.stage-wrap{position:relative;width:100%;aspect-ratio:960/540;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.stage{position:absolute;left:0;top:0;width:960px;height:540px;transform-origin:0 0}
+.stage svg{position:absolute;inset:0;width:960px;height:540px;overflow:visible}
+#hl{position:absolute;inset:0;pointer-events:none}
+.no-anim,.no-anim *{transition:none!important;animation:none!important}
+
+/* reveal system */
+.rv{opacity:0;transition:opacity .55s,transform .65s cubic-bezier(.3,1.2,.5,1)}
+.rv.on{opacity:1}
+.rv.up{transform:translateY(12px)} .rv.up.on{transform:none}
+.rv.pop{transform:scale(.4);transform-box:fill-box;transform-origin:center} .rv.pop.on{transform:none}
+.rv.grow{transform:scaleY(0);transform-box:fill-box;transform-origin:bottom} .rv.grow.on{transform:none}
+.rv.growx{transform:scaleX(0);transform-box:fill-box;transform-origin:left} .rv.growx.on{transform:none}
+.gone{opacity:0!important;pointer-events:none}
+.draw{stroke-dasharray:1;stroke-dashoffset:1;opacity:1;transition:stroke-dashoffset 1.3s ease-in-out}
+.draw.on{stroke-dashoffset:0}
+[data-h]{transition:opacity .5s}
+
+/* svg text */
+.t{font:400 14px var(--f-ui);fill:var(--ink)}
+.tl{font:500 13px var(--f-ui);fill:var(--muted)}
+.tb{font:700 17px var(--f-ui);fill:var(--ink)}
+.tn{font:600 14px var(--f-code);fill:var(--ink)}
+.tbig{font:700 30px var(--f-code);fill:var(--ink)}
+.mid{text-anchor:middle} .end{text-anchor:end}
+.ax{stroke:var(--line);stroke-width:1.2;fill:none}
+.gl{stroke:var(--grid);stroke-width:1}
+
+/* html boxes */
+.hb{position:absolute;font-size:14px;line-height:1.55;color:var(--ink)}
+.fx{font:500 15px var(--f-code);background:var(--soft);border-radius:8px;padding:10px 14px}
+.fx.sm{font-size:13.5px}
+.fx b{color:var(--s1)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 14px}
+.big{font:700 32px var(--f-code);letter-spacing:-.01em}
+.lab{font:600 12px var(--f-ui);color:var(--muted);letter-spacing:.04em}
+.chip{display:inline-block;font:600 13px var(--f-code);padding:3px 10px;border-radius:999px;background:var(--soft);color:var(--s1);margin:3px 4px 3px 0}
+.box{border:1.5px solid var(--line);border-radius:8px;background:var(--surface);padding:8px 12px;text-align:center;font-weight:600}
+.box.k1{border-color:var(--s1);color:var(--s1)} .box.k2{border-color:var(--s2);color:var(--s2)}
+table.mt{border-collapse:collapse;font:400 13.5px var(--f-code);width:100%}
+table.mt th,table.mt td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:right}
+table.mt th{font:600 12px var(--f-ui);color:var(--muted)}
+table.mt td:first-child,table.mt th:first-child{text-align:left}
+table.mt .rv{transition:opacity .4s}
+.okc{color:var(--s2);font-weight:700} .bad{color:var(--err);font-weight:700}
+.note{font-size:13px;color:var(--muted)}
+
+/* confusion matrix */
+.cell{stroke:var(--line);stroke-width:1.5;transition:stroke .3s,stroke-width .3s,opacity .4s}
+.cell.ok{fill:var(--okbg)} .cell.bad{fill:var(--errbg)}
+.cell.hl{stroke:var(--ink);stroke-width:3.5}
+.cell.dimc{opacity:.35}
+.cname{font:700 15px var(--f-code);fill:var(--ink)}
+.ccnt{font:700 26px var(--f-code);fill:var(--ink)}
+.dot{transition:transform 1s cubic-bezier(.45,0,.25,1),fill .5s,opacity .4s}
+.dot.pos{fill:var(--pos)} .dot.neg{fill:var(--neg)} .dot.grey{fill:var(--muted)}
+
+/* controls */
+.ctrl{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.btn{appearance:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);height:38px;min-width:38px;border-radius:8px;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 10px;cursor:pointer;font:500 14px var(--f-ui)}
+.btn:hover{border-color:var(--s2)}
+.btn:focus-visible,.chipb:focus-visible{outline:2px solid var(--s2);outline-offset:2px}
+.btn.play{background:#00587C;color:#fff;border-color:#00587C;padding:0 14px}
+.btn svg{width:16px;height:16px;fill:currentColor}
+.chips{display:flex;flex-wrap:wrap;gap:5px;flex:1;min-width:0}
+.chipb{appearance:none;cursor:pointer;height:30px;min-width:30px;padding:0 6px;border-radius:6px;border:1px solid var(--line);background:var(--surface);
+  color:var(--muted);font:500 13px var(--f-ui);font-variant-numeric:tabular-nums}
+.chipb.done{color:var(--s2)}
+.chipb.cur{background:var(--s2);color:#fff;border-color:var(--s2)}
+.bar2{height:3px;background:var(--line);border-radius:2px;overflow:hidden}
+.bar2 i{display:block;height:100%;width:0;background:var(--s2);transition:width .4s}
+
+.cap{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 20px 18px}
+.cap .eb{font:500 12px var(--f-ui);color:var(--s2);letter-spacing:.08em}
+.cap h2{margin:2px 0 10px;font-size:20px;font-weight:700}
+.cap ul{margin:0;padding-left:1.15em;display:flex;flex-direction:column;gap:5px;max-width:80ch}
+.cap li::marker{color:var(--s2)}
+code{font-family:var(--f-code);font-size:.9em;background:var(--soft);color:var(--ink);padding:1px 5px;border-radius:4px}
+.tbl{overflow-x:auto}
+table.sum{border-collapse:collapse;width:100%;min-width:560px;font-size:14px}
+table.sum th,table.sum td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+table.sum th{font-weight:600;color:var(--muted);font-size:12px}
+table.sum td:first-child{font-weight:700}
+@media (prefers-reduced-motion: reduce){.stage *{transition-duration:.01s!important;animation-duration:.01s!important}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>모델 구축을 위한 데이터 준비</h1>
+    <p>데이터 분할 · 교차 검증 · 클래스 불균형 · 화학 데이터 split을 22개 장면으로 표현함</p>
+  </header>
+  <div class="stage-wrap" id="wrap">
+    <div class="stage" id="stage">
+      <svg id="svg" viewBox="0 0 960 540" aria-hidden="true"></svg>
+      <canvas id="cv" width="400" height="400" style="position:absolute;left:60px;top:70px;width:400px;height:400px;display:none"></canvas>
+      <div id="hl"></div>
+    </div>
+  </div>
+  <div class="ctrl">
+    <button class="btn" id="bPrev" aria-label="이전 장면"><svg viewBox="0 0 24 24"><path d="M15.5 5 8.5 12l7 7-1.6 1.6L5.3 12l8.6-8.6z"/></svg></button>
+    <button class="btn play" id="bPlay" aria-label="재생/일시정지"><svg viewBox="0 0 24 24" id="iPlay"><path d="M7 4.5v15l12-7.5z"/></svg><span id="lPlay">재생</span></button>
+    <button class="btn" id="bNext" aria-label="다음 장면"><svg viewBox="0 0 24 24"><path d="M8.5 5l7 7-7 7 1.6 1.6 8.6-8.6-8.6-8.6z"/></svg></button>
+    <button class="btn" id="bRe" aria-label="장면 다시 보기"><svg viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg></button>
+    <div class="chips" id="chips"></div>
+  </div>
+  <div class="bar2"><i id="prog"></i></div>
+  <section class="cap" aria-live="polite">
+    <div class="eb" id="capN"></div>
+    <h2 id="capT"></h2>
+    <div id="capB"></div>
+  </section>
+</div>
+
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const NS='http://www.w3.org/2000/svg';
+const stage=$('stage'), wrap=$('wrap'), SV=$('svg'), HL=$('hl'), CV=$('cv');
+const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+function fit(){stage.style.transform='scale('+(wrap.clientWidth/960)+')';}
+new ResizeObserver(fit).observe(wrap); fit();
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const f2=v=>v.toFixed(2), f3=v=>v.toFixed(3);
+const mean=a=>a.reduce((s,v)=>s+v,0)/a.length;
+
+/* ---------- element helpers ---------- */
+function E(tag,attrs,par){const e=document.createElementNS(NS,tag); for(const k in attrs){ if(k==='p'){e.dataset.p=attrs.p; e.classList.add('rv');} else if(k==='h'){e.dataset.h=attrs.h;} else if(k==='cls'){e.setAttribute('class',(e.getAttribute('class')||'')+' '+attrs.cls);} else e.setAttribute(k,attrs[k]);} (par||SV).appendChild(e); return e;}
+function T(par,x,y,txt,cls,attrs){const t=E('text',Object.assign({x,y,class:cls||'t'},attrs||{}),par); t.textContent=txt; return t;}
+function G(attrs,par){return E('g',attrs||{},par);}
+function H(html,x,y,w,o){o=o||{}; const d=document.createElement('div'); d.className='hb '+(o.cls||''); d.style.left=x+'px'; d.style.top=y+'px'; if(w) d.style.width=w+'px';
+  if(o.p!==undefined){d.dataset.p=o.p; d.classList.add('rv'); if(o.up!==false) d.classList.add('up');} if(o.h!==undefined) d.dataset.h=o.h; d.innerHTML=html; HL.appendChild(d); return d;}
+function P(el,p,extra){el.dataset.p=p; el.classList.add('rv'); if(extra) extra.split(' ').forEach(c=>el.classList.add(c)); return el;}
+function delay(el,s){el.style.transitionDelay=s+'s'; return el;}
+function reveal(p){
+  stage.querySelectorAll('[data-p]').forEach(e=>e.classList.toggle('on',p>=+e.dataset.p));
+  stage.querySelectorAll('[data-h]').forEach(e=>e.classList.toggle('gone',p>=+e.dataset.h));
+}
+function axes(par,x0,y0,w,h,o){ // o: xt:[[v,label]], yt, xmap, ymap, xl, yl
+  const g=G({},par);
+  (o.yt||[]).forEach(([v,l])=>{const y=o.ym(v); E('line',{x1:x0,x2:x0+w,y1:y,y2:y,class:'gl'},g); T(g,x0-8,y+4,l,'tl end');});
+  (o.xt||[]).forEach(([v,l])=>{const x=o.xm(v); E('line',{x1:x,x2:x,y1:y0,y2:y0+h,class:'gl'},g); T(g,x,y0+h+18,l,'tl mid');});
+  E('rect',{x:x0,y:y0,width:w,height:h,class:'ax'},g);
+  if(o.xl) T(g,x0+w/2,y0+h+38,o.xl,'tl mid');
+  if(o.yl) T(g,x0-40,y0+h/2,o.yl,'tl mid',{transform:`rotate(-90 ${x0-40} ${y0+h/2})`});
+  return g;
+}
+
+/* ---------- playback core ---------- */
+let token={c:false};
+const chk=tk=>{if(tk.c) throw 'x';};
+function mkCtx(tk){
+  return {
+    ph:p=>{chk(tk); reveal(p);},
+    w:ms=>new Promise(r=>setTimeout(r,reduced?Math.min(ms,250):ms)).then(()=>chk(tk)),
+    tw:(ms,fn,ease)=>new Promise(res=>{ if(reduced){fn(1); res(); return;}
+      const t0=performance.now(), E_=ease||(u=>u<.5?2*u*u:1-Math.pow(-2*u+2,2)/2);
+      const st=now=>{ if(tk.c){res(); return;} const u=Math.min(1,(now-t0)/ms); fn(E_(u)); if(u<1) requestAnimationFrame(st); else res(); };
+      requestAnimationFrame(st);}).then(()=>chk(tk)),
+  };
+}
+
+/* ---------- datasets ---------- */
+const IRIS=[[1.4,0.2,0,5.1,3.5],[1.4,0.2,0,4.9,3.0],[1.3,0.2,0,4.7,3.2],[1.5,0.2,0,4.6,3.1],[1.4,0.2,0,5.0,3.6],[1.7,0.4,0,5.4,3.9],[1.4,0.3,0,4.6,3.4],[1.5,0.2,0,5.0,3.4],[1.4,0.2,0,4.4,2.9],[1.5,0.1,0,4.9,3.1],[1.5,0.2,0,5.4,3.7],[1.6,0.2,0,4.8,3.4],[1.4,0.1,0,4.8,3.0],[1.1,0.1,0,4.3,3.0],[1.2,0.2,0,5.8,4.0],[1.5,0.4,0,5.7,4.4],[1.3,0.4,0,5.4,3.9],[1.4,0.3,0,5.1,3.5],[1.7,0.3,0,5.7,3.8],[1.5,0.3,0,5.1,3.8],[1.7,0.2,0,5.4,3.4],[1.5,0.4,0,5.1,3.7],[1.0,0.2,0,4.6,3.6],[1.7,0.5,0,5.1,3.3],[1.9,0.2,0,4.8,3.4],[1.6,0.2,0,5.0,3.0],[1.6,0.4,0,5.0,3.4],[1.5,0.2,0,5.2,3.5],[1.4,0.2,0,5.2,3.4],[1.6,0.2,0,4.7,3.2],[1.6,0.2,0,4.8,3.1],[1.5,0.4,0,5.4,3.4],[1.5,0.1,0,5.2,4.1],[1.4,0.2,0,5.5,4.2],[1.5,0.2,0,4.9,3.1],[1.2,0.2,0,5.0,3.2],[1.3,0.2,0,5.5,3.5],[1.4,0.1,0,4.9,3.6],[1.3,0.2,0,4.4,3.0],[1.5,0.2,0,5.1,3.4],[1.3,0.3,0,5.0,3.5],[1.3,0.3,0,4.5,2.3],[1.3,0.2,0,4.4,3.2],[1.6,0.6,0,5.0,3.5],[1.9,0.4,0,5.1,3.8],[1.4,0.3,0,4.8,3.0],[1.6,0.2,0,5.1,3.8],[1.4,0.2,0,4.6,3.2],[1.5,0.2,0,5.3,3.7],[1.4,0.2,0,5.0,3.3],[4.7,1.4,1,7.0,3.2],[4.5,1.5,1,6.4,3.2],[4.9,1.5,1,6.9,3.1],[4.0,1.3,1,5.5,2.3],[4.6,1.5,1,6.5,2.8],[4.5,1.3,1,5.7,2.8],[4.7,1.6,1,6.3,3.3],[3.3,1.0,1,4.9,2.4],[4.6,1.3,1,6.6,2.9],[3.9,1.4,1,5.2,2.7],[3.5,1.0,1,5.0,2.0],[4.2,1.5,1,5.9,3.0],[4.0,1.0,1,6.0,2.2],[4.7,1.4,1,6.1,2.9],[3.6,1.3,1,5.6,2.9],[4.4,1.4,1,6.7,3.1],[4.5,1.5,1,5.6,3.0],[4.1,1.0,1,5.8,2.7],[4.5,1.5,1,6.2,2.2],[3.9,1.1,1,5.6,2.5],[4.8,1.8,1,5.9,3.2],[4.0,1.3,1,6.1,2.8],[4.9,1.5,1,6.3,2.5],[4.7,1.2,1,6.1,2.8],[4.3,1.3,1,6.4,2.9],[4.4,1.4,1,6.6,3.0],[4.8,1.4,1,6.8,2.8],[5.0,1.7,1,6.7,3.0],[4.5,1.5,1,6.0,2.9],[3.5,1.0,1,5.7,2.6],[3.8,1.1,1,5.5,2.4],[3.7,1.0,1,5.5,2.4],[3.9,1.2,1,5.8,2.7],[5.1,1.6,1,6.0,2.7],[4.5,1.5,1,5.4,3.0],[4.5,1.6,1,6.0,3.4],[4.7,1.5,1,6.7,3.1],[4.4,1.3,1,6.3,2.3],[4.1,1.3,1,5.6,3.0],[4.0,1.3,1,5.5,2.5],[4.4,1.2,1,5.5,2.6],[4.6,1.4,1,6.1,3.0],[4.0,1.2,1,5.8,2.6],[3.3,1.0,1,5.0,2.3],[4.2,1.3,1,5.6,2.7],[4.2,1.2,1,5.7,3.0],[4.2,1.3,1,5.7,2.9],[4.3,1.3,1,6.2,2.9],[3.0,1.1,1,5.1,2.5],[4.1,1.3,1,5.7,2.8],[6.0,2.5,2,6.3,3.3],[5.1,1.9,2,5.8,2.7],[5.9,2.1,2,7.1,3.0],[5.6,1.8,2,6.3,2.9],[5.8,2.2,2,6.5,3.0],[6.6,2.1,2,7.6,3.0],[4.5,1.7,2,4.9,2.5],[6.3,1.8,2,7.3,2.9],[5.8,1.8,2,6.7,2.5],[6.1,2.5,2,7.2,3.6],[5.1,2.0,2,6.5,3.2],[5.3,1.9,2,6.4,2.7],[5.5,2.1,2,6.8,3.0],[5.0,2.0,2,5.7,2.5],[5.1,2.4,2,5.8,2.8],[5.3,2.3,2,6.4,3.2],[5.5,1.8,2,6.5,3.0],[6.7,2.2,2,7.7,3.8],[6.9,2.3,2,7.7,2.6],[5.0,1.5,2,6.0,2.2],[5.7,2.3,2,6.9,3.2],[4.9,2.0,2,5.6,2.8],[6.7,2.0,2,7.7,2.8],[4.9,1.8,2,6.3,2.7],[5.7,2.1,2,6.7,3.3],[6.0,1.8,2,7.2,3.2],[4.8,1.8,2,6.2,2.8],[4.9,1.8,2,6.1,3.0],[5.6,2.1,2,6.4,2.8],[5.8,1.6,2,7.2,3.0],[6.1,1.9,2,7.4,2.8],[6.4,2.0,2,7.9,3.8],[5.6,2.2,2,6.4,2.8],[5.1,1.5,2,6.3,2.8],[5.6,1.4,2,6.1,2.6],[6.1,2.3,2,7.7,3.0],[5.6,2.4,2,6.3,3.4],[5.5,1.8,2,6.4,3.1],[4.8,1.8,2,6.0,3.0],[5.4,2.1,2,6.9,3.1],[5.6,2.4,2,6.7,3.1],[5.1,2.3,2,6.9,3.1],[5.1,1.9,2,5.8,2.7],[5.9,2.3,2,6.8,3.2],[5.7,2.5,2,6.7,3.3],[5.2,2.3,2,6.7,3.0],[5.0,1.9,2,6.3,2.5],[5.2,2.0,2,6.5,3.0],[5.4,2.3,2,6.2,3.4],[5.1,1.8,2,5.9,3.0]]; // [petal length, petal width, class, sepal length, sepal width]
+const SP=['Setosa','Versicolor','Virginica'];
+function rng(seed){let s=seed%2147483647; if(s<=0)s+=2147483646; return ()=>{s=s*16807%2147483647; return (s-1)/2147483646;};}
+function shuffle(a,r){a=a.slice(); for(let i=a.length-1;i>0;i--){const j=Math.floor(r()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a;}
+/* 30-sample toy (Versicolor 15 + Virginica 15) for hold-out / CV */
+const TOY=(()=>{const r=rng(11); const v1=shuffle([...Array(50).keys()].map(i=>50+i),r).slice(0,15), v2=shuffle([...Array(50).keys()].map(i=>100+i),r).slice(0,15); return shuffle([...v1,...v2],r).map(i=>[IRIS[i][3],IRIS[i][4],IRIS[i][2]]);})();
+function nn1Acc(train,test){let ok=0; test.forEach(t=>{let best=1e9,lab=-1; train.forEach(s=>{const d=Math.hypot(s[0]-t[0],s[1]-t[1]); if(d<best){best=d;lab=s[2];}}); if(lab===t[2]) ok++;}); return ok/test.length;}
+const HOLD=[3,17,29].map(seed=>{const idx=shuffle([...Array(30).keys()],rng(seed)); const te=idx.slice(0,6), tr=idx.slice(6); return {te,acc:nn1Acc(tr.map(i=>TOY[i]),te.map(i=>TOY[i]))};});
+const FOLD_ORDER=shuffle([...Array(30).keys()],rng(5));
+const CV5=[0,1,2,3,4].map(k=>{const te=FOLD_ORDER.slice(k*6,k*6+6), tr=FOLD_ORDER.filter(i=>!te.includes(i)); return nn1Acc(tr.map(i=>TOY[i]),te.map(i=>TOY[i]));});
+const CVM=mean(CV5);
+
+/* toy chemical space: 5 chemical series, each with 2-3 overlapping scaffolds */
+const CHEM=(()=>{const r=rng(13); const series=[[.22,.25],[.72,.24],[.28,.72],[.55,.52],[.80,.76]]; const pts=[]; let sc=0;
+  series.forEach((c,si)=>{const ns=2+(si%2); for(let k=0;k<ns;k++){const a0=r()*6.283, off=.045; const cc=[c[0]+Math.cos(a0)*off,c[1]+Math.sin(a0)*off];
+    const n=5+Math.floor(r()*4); for(let i=0;i<n;i++){const a=r()*Math.PI*2, d=Math.sqrt(r())*.055; pts.push({x:cc[0]+Math.cos(a)*d,y:cc[1]+Math.sin(a)*d,sc,yr:2015+Math.floor(r()*10)});} sc++;}});
+  return pts;})();
+const NC=CHEM.length;
+const cdist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+// Butina clustering (cutoff in coordinate distance)
+const BUT=(()=>{const cut=.085, nb=CHEM.map((p,i)=>CHEM.map((q,j)=>j).filter(j=>j!==i&&cdist(p,CHEM[j])<cut));
+  const order=CHEM.map((_,i)=>i).sort((a,b)=>nb[b].length-nb[a].length); const lab=Array(NC).fill(-1); let c=0;
+  order.forEach(i=>{if(lab[i]>=0) return; lab[i]=c; nb[i].forEach(j=>{if(lab[j]<0) lab[j]=c;}); c++;}); return lab;})();
+// UMAP-like coarse regions: k-means k=4
+const REG=(()=>{let cen=[[.2,.25],[.75,.27],[.35,.65],[.75,.72]]; let lab=[];
+  for(let it=0;it<15;it++){lab=CHEM.map(p=>{let b=0,bd=9; cen.forEach((c,k)=>{const d=Math.hypot(p.x-c[0],p.y-c[1]); if(d<bd){bd=d;b=k;}}); return b;});
+    cen=cen.map((c,k)=>{const m=CHEM.filter((_,i)=>lab[i]===k); return m.length?[mean(m.map(p=>p.x)),mean(m.map(p=>p.y))]:c;});} return lab;})();
+function groupSplit(lab,seed){const groups=[...new Set(lab)]; const g=shuffle(groups,rng(seed)); const te=new Set(); for(const k of g){if(te.size>=NC*.2) break; lab.forEach((l,i)=>{if(l===k) te.add(i);});} return te;}
+const SPLITS={
+  random:(()=>{const idx=shuffle([...Array(NC).keys()],rng(41)); return new Set(idx.slice(0,Math.round(NC*.2)));})(),
+  scaffold:groupSplit(CHEM.map(p=>p.sc),7),
+  butina:groupSplit(BUT,9),
+  umap:groupSplit(REG,4),
+  time:new Set(CHEM.map((p,i)=>i).filter(i=>CHEM[i].yr>=2023))
+};
+function nnInfo(te){const out=[]; te.forEach(i=>{let b=9,bj=-1; CHEM.forEach((q,j)=>{if(te.has(j)) return; const d=cdist(CHEM[i],q); if(d<b){b=d;bj=j;}}); out.push({i,j:bj,d:b});}); return out;}
+const NN={}; for(const k in SPLITS) NN[k]=nnInfo(SPLITS[k]);
+const median=a=>{const s=a.slice().sort((x,y)=>x-y); const m=s.length>>1; return s.length%2?s[m]:(s[m-1]+s[m])/2;};
+function hull(pts){if(pts.length<3) return pts; const p=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]); const cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+  const lo=[]; for(const q of p){while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],q)<=0) lo.pop(); lo.push(q);}
+  const up=[]; for(const q of p.slice().reverse()){while(up.length>=2&&cr(up[up.length-2],up[up.length-1],q)<=0) up.pop(); up.push(q);}
+  return lo.slice(0,-1).concat(up.slice(0,-1));}
+function shapePath(k,r){const sides=[0,3,4,4,5,6,3,8][k%8], rot=[0,-90,45,0,-90,0,90,22.5][k%8];
+  if(!sides) return `M${-r},0 a${r},${r} 0 1,0 ${2*r},0 a${r},${r} 0 1,0 ${-2*r},0`;
+  let d=''; for(let i=0;i<sides;i++){const a=(rot+i*360/sides)*Math.PI/180; d+=(i?'L':'M')+(r*Math.cos(a)).toFixed(2)+','+(r*Math.sin(a)).toFixed(2);} return d+'Z';}
+/* chemical space plot helper */
+function chemPlot(par,x0,y0,s,o){o=o||{};
+  const X=v=>x0+v*s, Y=v=>y0+s-v*s;
+  E('rect',{x:x0,y:y0,width:s,height:s,class:'ax'},par);
+  T(par,x0+s/2,y0+s+20,'화학 공간 (구조 유사성을 2D로 표현)','tl mid');
+  const hg=G({},par), lg=G({},par), pg=G({},par);
+  const els=CHEM.map((p,i)=>{const g=G({transform:`translate(${X(p.x)},${Y(p.y)})`},pg); const pa=E('path',{d:shapePath(o.shapes?p.sc:0,6.5)},g); pa.style.fill='var(--muted)'; pa.style.transition='fill .5s, opacity .5s'; return pa;});
+  return {X,Y,els,hg,lg,
+    color(fn){els.forEach((e,i)=>{const c=fn(i); e.style.fill=c; });},
+    hulls(lab,cls,p){hg.innerHTML=''; [...new Set(lab)].forEach(k=>{const pts=CHEM.map((q,i)=>lab[i]===k?[X(q.x),Y(q.y)]:null).filter(Boolean); if(pts.length<2) return;
+      const h=hull(pts), cx=mean(h.map(q=>q[0])), cy=mean(h.map(q=>q[1])); const d=h.map((q,j)=>{const dx=q[0]-cx, dy=q[1]-cy, L=Math.hypot(dx,dy)||1; return (j?'L':'M')+(q[0]+dx/L*11)+','+(q[1]+dy/L*11);}).join('')+'Z';
+      const e=E('path',{d,fill:'var(--s3)','fill-opacity':.1,stroke:'var(--s1)','stroke-width':1.3,'stroke-dasharray':'5 4','stroke-linejoin':'round'},hg);});},
+    lines(info){lg.innerHTML=''; info.forEach(({i,j})=>{E('line',{x1:X(CHEM[i].x),y1:Y(CHEM[i].y),x2:X(CHEM[j].x),y2:Y(CHEM[j].y),stroke:'var(--err)','stroke-width':2},lg);});}
+  };
+}
+const TRC='var(--s2)', TEC='var(--pos)';
+
+/* ======================= SCENES ======================= */
+const S=[];
+
+/* 1 */
+S.push({t:'머신러닝의 구성요소',b:[
+ 'X (features, variables): 모델에 입력하는 값, 독립변수(원인)',
+ 'y (label, target): 모델이 맞히려는 값, 종속변수(결과)',
+ 'Model: 데이터로부터 X → y 관계(함수 f)를 학습함',
+ '예: 꽃잎·꽃받침 크기(X)로 붓꽃 종류(y) 예측'],
+ f:async c=>{
+  const rows=[[5.1,3.5,1.4,0.2,'Setosa'],[7.0,3.2,4.7,1.4,'Versicolor'],[6.3,3.3,6.0,2.5,'Virginica'],[4.9,3.0,1.4,0.2,'Setosa'],[6.4,3.2,4.5,1.5,'Versicolor']];
+  let tb='<table class="mt" style="font-size:14px"><tr><th>sepal L</th><th>sepal W</th><th>petal L</th><th>petal W</th><th>species</th></tr>';
+  rows.forEach((r,i)=>tb+=`<tr id="r${i}"><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td></tr>`);
+  H(tb+'</table>',40,90,470,{p:0,up:false});
+  E('rect',{x:36,y:84,width:368,height:210,rx:8,fill:'none',stroke:'var(--s1)','stroke-width':3,p:1},SV);
+  E('rect',{x:404,y:84,width:110,height:210,rx:8,fill:'none',stroke:'var(--pos)','stroke-width':3,p:2},SV);
+  H('<div style="color:var(--s1);font-weight:700">X: features, variables</div><div class="note">독립변수 (원인) · 4개 특성</div>',40,310,340,{p:1});
+  H('<div style="color:var(--pos);font-weight:700">y: label, target</div><div class="note">종속변수 (결과)</div>',400,310,160,{p:2});
+  // model box
+  const gm=G({p:3});
+  E('rect',{x:640,y:180,width:230,height:120,rx:10,fill:'var(--soft)',stroke:'var(--s1)','stroke-width':2.5},gm);
+  T(gm,755,232,'Model  f','tb mid'); T(gm,755,258,'데이터를 통해 학습','tl mid');
+  E('path',{d:'M560,240 L630,240',stroke:'var(--s1)','stroke-width':3,'marker-end':''},gm); T(gm,595,228,'X','tb mid');
+  E('path',{d:'M755,300 L755,360',stroke:'var(--pos)','stroke-width':3},gm); T(gm,775,340,'y','tb');
+  const tok=E('rect',{x:0,y:0,width:60,height:22,rx:4,fill:'var(--s1)'},SV), tokT=T(SV,0,0,'','tn mid'); tokT.style.fill='#fff'; tok.style.opacity=0; tokT.style.opacity=0;
+  const out=T(SV,755,395,'','tb mid'); out.style.fill='var(--pos)';
+  await c.ready(); c.ph(0); await c.w(900); c.ph(1); await c.w(1300); c.ph(2); await c.w(1300); c.ph(3); await c.w(900);
+  for(const [k,i] of [[0,1],[1,2]]){
+    tok.style.opacity=1; tokT.style.opacity=1; tokT.textContent='X'+(i+1);
+    await c.tw(900,u=>{const x=540+u*130, y=240; tok.setAttribute('x',x-30); tok.setAttribute('y',y-11); tokT.setAttribute('x',x); tokT.setAttribute('y',y+5);});
+    tok.style.opacity=0; tokT.style.opacity=0; out.textContent='→ '+rows[i][4]; await c.w(1100);
+  }
+ }});
+
+/* 2 */
+S.push({t:'모델 구축과 활용 과정',b:[
+ '모델 구축: label 있는 학습 데이터 → 데이터 분할 (Hold-out / K-fold CV) → 모델 학습·평가 → 최고 성능 모델 저장·배포',
+ '모델 학습·평가 단계에서 여러 모델과 하이퍼파라미터를 비교함',
+ '모델 활용: label 없는 실제 데이터를 학습된 모델에 입력 → label 예측 → 실제 실험 등에 활용',
+ '이번 강의 주제 = 모델 구축을 위한 데이터 준비 (분할, 교차 검증, 클래스 불균형)'],
+ f:async c=>{
+  E('rect',{x:24,y:60,width:560,height:300,rx:22,fill:'none',stroke:'var(--line)','stroke-width':2,p:0},SV); T(SV,40,48,'모델을 구축하는 과정','tl',{p:0});
+  E('rect',{x:610,y:60,width:330,height:300,rx:22,fill:'none',stroke:'var(--line)','stroke-width':2,p:4},SV); T(SV,626,48,'모델을 활용하는 과정','tl',{p:4});
+  const bx=[['학습 데이터<div class="note">label 있음</div>',40,170,120,0],['데이터 분할<div class="note">학습·평가 데이터 준비</div>',215,170,150,1],['모델 학습 및 평가<div class="note">모델 테스트 · 하이퍼파라미터 테스트</div>',415,160,150,2],
+    ['학습된 모델',690,110,170,4],['실제 데이터<div class="note">label 없음</div>',630,240,130,5],['label 예측',790,240,130,6]];
+  bx.forEach(([h,x,y,w,p])=>H(`<div class="box k1">${h}</div>`,x,y,w,{p}));
+  H('<div class="chip">Hold-out validation</div><div class="chip">K-fold cross validation</div>',205,262,180,{p:1});
+  H('<div class="note" style="font-weight:700;color:var(--ink)">최고 성능 모델 저장·배포 →</div>',470,92,190,{p:3});
+  H('<div class="note">→ 실제 실험 등으로 활용</div>',780,320,170,{p:6});
+  const arr=[['M162,195 L212,195',1],['M368,195 L412,195',2],['M565,160 C600,110 640,128 686,128',3],['M695,238 C700,200 730,175 760,152',5],['M762,265 L786,265',6]];
+  arr.forEach(([d,p])=>{const a=E('path',{d,fill:'none',stroke:'var(--s1)','stroke-width':2.5,pathLength:1,class:'draw'},SV); a.dataset.p=p;});
+  await c.ready(); for(let p=0;p<=6;p++){c.ph(p); await c.w(p===0?900:1000);}
+ }});
+
+/* 3 */
+S.push({t:'IRIS 데이터셋',b:[
+ '붓꽃(iris) 150송이의 꽃받침(sepal)·꽃잎(petal) 길이와 너비를 측정한 데이터',
+ 'Feature 4개: sepal length, sepal width, petal length, petal width',
+ 'Label: 꽃의 종류(species) 3종 → Setosa, Versicolor, Virginica',
+ '목표: 꽃받침·꽃잎 정보로 꽃의 종류 예측'],
+ f:async c=>{
+  const cx=230,cy=270;
+  const pet=(ang,len,wid,fill,p,cls)=>{const g=G({transform:`translate(${cx},${cy}) rotate(${ang})`,p},SV); E('ellipse',{cx:len/2,cy:0,rx:len/2,ry:wid/2,fill,stroke:'var(--surface)','stroke-width':2},g); return g;};
+  [90,210,330].forEach(a=>pet(a,170,70,'var(--s3)',0));
+  [30,150,270].forEach(a=>pet(a,110,36,'var(--s1)',0));
+  E('circle',{cx,cy,r:14,fill:'var(--pos)'},SV);
+  // measurement on sepal pointing down (90deg)
+  const m=G({p:1},SV); E('line',{x1:cx+46,y1:cy,x2:cx+46,y2:cy+170,stroke:'var(--ink)','stroke-width':2},m); T(m,cx+54,cy+100,'sepal length','tn');
+  E('line',{x1:cx-35,y1:cy+120,x2:cx+35,y2:cy+120,stroke:'var(--ink)','stroke-width':2,'stroke-dasharray':'4 3'},m); T(m,cx-40,cy+124,'sepal width','tn end');
+  const m2=G({p:2},SV); E('line',{x1:cx-30,y1:cy,x2:cx-30,y2:cy-110,stroke:'var(--ink)','stroke-width':2},m2); T(m2,cx-38,cy-70,'petal length','tn end');
+  E('line',{x1:cx-18,y1:cy-80,x2:cx+18,y2:cy-80,stroke:'var(--ink)','stroke-width':2,'stroke-dasharray':'4 3'},m2); T(m2,cx+24,cy-78,'petal width','tn');
+  T(SV,cx,40,'꽃받침(sepal, 연한 색) · 꽃잎(petal, 진한 색)','tl mid',{p:0});
+  let tb='<table class="mt" style="font-size:14px"><tr><th>변수</th><th>의미</th><th>역할</th></tr>';
+  [['Sepal length','꽃받침의 길이','X'],['Sepal width','꽃받침의 너비','X'],['Petal length','꽃잎의 길이','X'],['Petal width','꽃잎의 너비','X'],['Species','꽃의 종류','y']].forEach((r,i)=>tb+=`<tr class="rv" data-p="${i<2?1:i<4?2:3}"><td>${r[0]}</td><td>${r[1]}</td><td><b style="color:${r[2]==='y'?'var(--pos)':'var(--s1)'}">${r[2]}</b></td></tr>`);
+  H(tb+'</table>',520,70,400,{p:0,up:false});
+  H('<div class="card">꽃받침·꽃잎 정보(X 4개)로<br><b>꽃의 종류(y)</b>를 예측하는 분류 문제</div>',520,320,400,{p:4});
+  await c.ready(); for(let p=0;p<=4;p++){c.ph(p); await c.w(1300);}
+ }});
+
+/* 4 */
+S.push({t:'IRIS 데이터의 구조',b:[
+ '데이터 개수 150 → 행(row) 150개',
+ 'Feature X: 150 × 4 행렬 / Label y: 길이 150 벡터',
+ '종별 50개씩 균형 잡힌 데이터',
+ '꽃잎 길이·너비만으로도 세 종이 상당히 구분됨'],
+ f:async c=>{
+  const gx=70,gy=50,ch=2.9, col=['var(--s1)','var(--s2)','var(--pos)'];
+  const gX=G({p:0},SV), gY=G({p:1},SV);
+  for(let i=0;i<150;i++){ for(let j=0;j<4;j++) E('rect',{x:gx+j*34,y:gy+i*ch,width:32,height:ch-.6,fill:'var(--s3)','fill-opacity':.35+.15*((i*7+j*3)%4)},gX);
+    E('rect',{x:gx+150,y:gy+i*ch,width:32,height:ch-.6,fill:col[IRIS[i][2]]},gY);}
+  T(SV,gx+66,gy-12,'X (150 × 4)','tb mid',{p:0}); T(SV,gx+166,gy-12,'y','tb mid',{p:1});
+  E('line',{x1:gx-10,x2:gx-10,y1:gy,y2:gy+150*ch,stroke:'var(--ink)','stroke-width':2,p:0},SV); T(SV,gx-16,gy+75*ch,'150개','tn end',{p:0});
+  [0,1,2].forEach(k=>T(SV,gx+192,gy+(k*50+25)*ch+4,SP[k]+' 50','tl',{p:1}).style.fill=col[k]);
+  // scatter
+  const sx0=520,sy0=60,sw=380,sh=380, X=v=>sx0+(v-1)/6*sw, Y=v=>sy0+sh-v/2.6*sh;
+  const ax=axes(SV,sx0,sy0,sw,sh,{xt:[1,2,3,4,5,6,7].map(v=>[v,String(v)]),xm:X,yt:[0,.5,1,1.5,2,2.5].map(v=>[v,String(v)]),ym:Y,xl:'petal length (cm)',yl:'petal width (cm)'}); ax.dataset.p=2; ax.classList.add('rv');
+  IRIS.forEach((r,i)=>{const e=E('circle',{cx:X(r[0]),cy:Y(r[1]),r:5,fill:col[r[2]],'fill-opacity':.8,p:2},SV); e.classList.add('pop'); e.style.transitionDelay=(i*6)+'ms';});
+  [0,1,2].forEach(k=>T(SV,sx0+16,sy0+22+k*20,'● '+SP[k],'tn',{p:2}).style.fill=col[k]);
+  await c.ready(); c.ph(0); await c.w(1400); c.ph(1); await c.w(1500); c.ph(2); await c.w(2200);
+ }});
+
+/* 5 */
+S.push({t:'Train · Validation · Test의 역할',b:[
+ 'Training set: 모델이 X와 y의 관계를 학습하는 데이터',
+ 'Validation set: 학습 중 성능을 확인하며 모델·하이퍼파라미터를 고르는 데이터 → (1)(2) 과정을 n번 반복',
+ 'Test set: 모든 선택이 끝난 뒤 마지막에 한 번만 사용하는 최종 평가 데이터 (3)',
+ 'Test set 결과로 다시 모델을 고치면 test set이 더 이상 "처음 보는 데이터"가 아님'],
+ f:async c=>{
+  const box=(x,label,sub,p,col)=>{const g=G({p},SV); T(g,x+100,70,label,'tb mid'); E('rect',{x,y:110,width:200,height:110,rx:10,fill:'var(--soft)',stroke:col,'stroke-width':2.5},g);
+    T(g,x+100,172,'FUNCTION f','tb mid'); E('line',{x1:x+100,x2:x+100,y1:82,y2:108,stroke:col,'stroke-width':3},g); E('line',{x1:x+100,x2:x+100,y1:222,y2:252,stroke:col,'stroke-width':3},g); T(g,x+100,272,'ŷ','tb mid'); T(g,x+100,300,sub,'tl mid'); return g;};
+  box(40,'X from training set','학습',0,'var(--s1)'); box(380,'X from validation set','모델·하이퍼파라미터 선택',1,'var(--s2)'); box(720,'X from test set','최종 평가 (1회)',3,'var(--pos)');
+  const loop=G({p:1},SV); E('path',{d:'M242,140 C300,120 320,120 378,140',fill:'none',stroke:'var(--s2)','stroke-width':2.5},loop); E('path',{d:'M378,190 C320,210 300,210 242,190',fill:'none',stroke:'var(--err)','stroke-width':2.5},loop);
+  T(loop,310,118,'(1) 평가','tn mid'); T(loop,310,226,'(2) 수정','tn mid'); T(loop,310,170,'n cycle','tl mid');
+  E('path',{d:'M582,165 L718,165',stroke:'var(--pos)','stroke-width':2.5,'stroke-dasharray':'6 4',p:3},SV); T(SV,650,155,'(3)','tn mid',{p:3});
+  const dot=E('circle',{r:7,fill:'var(--hot)',stroke:'var(--ink)','stroke-width':2},SV); dot.style.opacity=0;
+  const cnt=T(SV,310,260,'','tb mid');
+  H('<div class="card" style="text-align:center"><b>Train</b>으로 배우고 → <b>Validation</b>으로 고르고 → <b>Test</b>로 마지막에 확인</div>',160,360,640,{p:4});
+  await c.ready(); c.ph(0); await c.w(1100); c.ph(1); await c.w(600);
+  dot.style.opacity=1;
+  for(let n=1;n<=3;n++){cnt.textContent='cycle '+n;
+    await c.tw(700,u=>{const t=u; const x=242+(378-242)*t, y=140-Math.sin(Math.PI*t)*18; dot.setAttribute('cx',x); dot.setAttribute('cy',y);},u=>u);
+    await c.tw(700,u=>{const x=378-(378-242)*u, y=190+Math.sin(Math.PI*u)*18; dot.setAttribute('cx',x); dot.setAttribute('cy',y);},u=>u);}
+  dot.style.opacity=0; c.ph(3); await c.w(1300); c.ph(4); await c.w(1200);
+ }});
+
+/* 6 */
+S.push({t:'Hold-out validation',b:[
+ '데이터를 섞은 뒤 고정된 비율로 training / validation / test set으로 나누는 방법',
+ '6:2:2, 7:2:1 등 다양한 비율 사용 (단순히 training / testing 2개로만 나누기도 함)',
+ '데이터 수가 많은 경우 가장 일반적으로 사용',
+ '분할은 한 번만 수행 → 계산이 빠름'],
+ f:async c=>{
+  const n=30, w=26, x0=90, y=230; const r=rng(13); const perm=shuffle([...Array(n).keys()],r);
+  const sq=[...Array(n)].map((_,i)=>{const e=E('rect',{x:0,y:0,width:w-4,height:w-4,rx:4},SV); e.style.fill='var(--muted)'; e.style.transition='transform .9s cubic-bezier(.45,0,.25,1), fill .5s'; return e;});
+  const place=(posOf,gapOf,colOf)=>sq.forEach((e,i)=>{const p=posOf(i); e.style.transform=`translate(${x0+p*w+gapOf(p)}px,${y}px)`; if(colOf) e.style.fill=colOf(p);});
+  place(i=>i,()=>0);
+  T(SV,480,170,'전체 데이터 30개','tb mid',{p:0,h:1});
+  const lbl=H('',90,290,780,{});
+  const split=(a,b)=>{ // a=train count, b=val count
+    place(i=>perm[i],p=>p<a?0:p<a+b?18:36,p=>p<a?'var(--s1)':p<a+b?'var(--s2)':'var(--pos)');};
+  const lab=(a,b,c3)=>{lbl.innerHTML=`<div style="display:flex;gap:18px;font:600 15px var(--f-ui)"><span style="color:var(--s1)">Training ${a}개</span>${b?`<span style="color:var(--s2)">Validation ${b}개</span>`:''}<span style="color:var(--pos)">Test ${c3}개</span></div>`;};
+  H('<div class="fx" style="text-align:center">Original set → 섞기(shuffle) → 비율대로 분할</div>',180,80,600,{p:0});
+  const ratio=T(SV,480,350,'','tbig mid');
+  await c.ready(); await c.w(800);
+  place(i=>perm[i],()=>0); c.ph(1); await c.w(1200);
+  split(24,0); lab(24,0,6); ratio.textContent='8 : 2'; await c.w(1900);
+  split(18,6); lab(18,6,6); ratio.textContent='6 : 2 : 2'; await c.w(1900);
+  split(21,6); lab(21,6,3); ratio.textContent='7 : 2 : 1'; await c.w(1500);
+ }});
+
+/* 7 */
+S.push({t:'데이터가 적을 때 hold-out의 문제',b:[
+ '데이터가 적으면 어떤 샘플이 test set에 들어가는지에 따라 성능이 크게 달라짐',
+ `예시: 붓꽃 30개(Versicolor·Virginica, 꽃받침 길이·너비), 1-NN 모델, test 6개 → 분할 3번의 정확도 ${HOLD.map(h=>f2(h.acc)).join(', ')}`,
+ '한 번의 분할 결과만으로는 성능을 믿기 어려움',
+ '해결: 여러 번 나누어 평가하는 교차 검증(cross validation)'],
+ f:async c=>{
+  const X=v=>90+(v-4.7)/3.4*360, Y=v=>440-(v-1.9)/2*360;
+  const ax=axes(SV,90,80,360,360,{xt:[5,6,7,8].map(v=>[v,String(v)]),xm:X,yt:[2,2.5,3,3.5].map(v=>[v,String(v)]),ym:Y,xl:'sepal length',yl:'sepal width'});
+  const col=['','var(--s1)','var(--s2)'];
+  const dots=TOY.map(r=>{const e=E('circle',{cx:X(r[0]),cy:Y(r[1]),r:7,fill:col[r[2]],stroke:'var(--surface)','stroke-width':2},SV); e.style.transition='stroke .3s, r .3s'; return e;});
+  T(SV,100,62,'● Versicolor  ● Virginica  (테두리 = test set)','tl');
+  dots.forEach((e,i)=>T(SV,0,0,'',''));
+  const res=[];
+  HOLD.forEach((h,k)=>{const y=120+k*90; T(SV,520,y,'분할 '+(k+1),'tb',{p:k+1}); const b=E('rect',{x:600,y:y-18,width:h.acc*260,height:24,rx:4,fill:'var(--s2)',p:k+1,cls:'growx'},SV); T(SV,610+h.acc*260,y,'정확도 '+f2(h.acc),'tn',{p:k+1});});
+  H(`<div class="card">같은 데이터·같은 모델인데<br>test set 선택에 따라 정확도가 ${f2(Math.min(...HOLD.map(h=>h.acc)))} ~ ${f2(Math.max(...HOLD.map(h=>h.acc)))}로 달라짐</div>`,520,380,400,{p:4});
+  await c.ready(); await c.w(900);
+  for(let k=0;k<3;k++){dots.forEach((e,i)=>{const t=HOLD[k].te.includes(i); e.setAttribute('stroke',t?'var(--ink)':'var(--surface)'); e.setAttribute('stroke-width',t?4:2);}); c.ph(k+1); await c.w(1600);}
+  dots.forEach(e=>{e.setAttribute('stroke','var(--surface)'); e.setAttribute('stroke-width',2);}); c.ph(4); await c.w(1200);
+ }});
+
+/* 8 */
+S.push({t:'교차 검증 (k-fold cross validation)',b:[
+ '교차 검증 = train set과 test set을 고정하지 않고, 여러 번 나누어 학습·평가하는 방법',
+ 'k-fold: 데이터를 k개 fold로 나누고, iteration마다 다른 fold를 test set으로 사용 → 총 k번 학습',
+ '최종 결과 = k개 검증 결과의 평균: Accuracy = Average(Accuracy₁, …, Accuracy_k)',
+ `예시(앞의 30개, 5-fold): ${CV5.map(f2).join(', ')} → 평균 ${f2(CVM)}`],
+ f:async c=>{
+  const x0=150,y0=70,bw=96,bh=48,gap=14;
+  T(SV,x0,y0-20,'Iteration','tl',{p:0});
+  const blocks=[];
+  for(let it=0;it<5;it++){T(SV,x0-16,y0+it*(bh+gap)+bh/2+5,String(it+1),'tb end',{p:it});
+    for(let f=0;f<5;f++){const e=E('rect',{x:x0+f*bw+2,y:y0+it*(bh+gap),width:bw-4,height:bh,rx:5,p:it},SV); e.style.fill=f===it?TEC:TRC; e.style.fillOpacity=f===it?1:.55; blocks.push(e);}
+    const a=CV5[it]; E('rect',{x:x0+5*bw+24,y:y0+it*(bh+gap)+10,width:a*120,height:bh-20,rx:4,fill:'var(--s1)',p:it,cls:'growx'},SV).style.transitionDelay='.4s';
+    T(SV,x0+5*bw+32+a*120,y0+it*(bh+gap)+bh/2+5,'Acc'+(it+1)+' = '+f2(a),'tn',{p:it}).style.transitionDelay='.4s';}
+  [0,1,2,3,4].forEach(f=>T(SV,x0+f*bw+bw/2,y0+5*(bh+gap)+6,'fold '+(f+1),'tl mid',{p:0}));
+  T(SV,x0,y0+5*(bh+gap)+40,'■ Train set   ■ Test set','tl',{p:0});
+  H(`<div class="fx">Accuracy = Average(${CV5.map(f2).join(', ')}) = <b>${f2(CVM)}</b></div>`,150,430,700,{p:5});
+  await c.ready(); for(let p=0;p<=5;p++){c.ph(p); await c.w(p<5?1100:1500);}
+ }});
+
+/* 9 */
+S.push({t:'k-fold의 특징: 모든 데이터가 한 번씩 평가에 사용',b:[
+ '각 샘플은 정확히 1번 test, (k − 1)번 training에 사용됨',
+ '모든 데이터가 적어도 한 번 학습과 평가에 활용됨',
+ 'k번 학습 필요 → 5-fold가 가장 많이 쓰이며 10-fold도 사용',
+ 'k가 클수록 학습 데이터 비율은 커지지만 계산 시간은 늘어남'],
+ f:async c=>{
+  const n=30, x0=100, y0=120, w=26;
+  const sq=[...Array(n)].map((_,i)=>{const e=E('rect',{x:x0+i*w,y:y0,width:w-4,height:w-4,rx:4},SV); e.style.fill=TRC; e.style.fillOpacity=.5; e.style.transition='fill .3s, fill-opacity .3s'; return e;});
+  const tcnt=[...Array(n)].map((_,i)=>T(SV,x0+i*w+11,y0+46,'0','tn mid')), lcnt=[...Array(n)].map((_,i)=>T(SV,x0+i*w+11,y0+70,'0','tl mid'));
+  T(SV,x0-12,y0+46,'test 횟수','tl end'); T(SV,x0-12,y0+70,'train 횟수','tl end');
+  const it=T(SV,480,90,'','tb mid');
+  // time bars
+  const g=G({p:1},SV); T(g,100,300,'필요한 학습 횟수 (= 계산 시간)','tb');
+  [['Hold-out',1],['5-fold',5],['10-fold',10]].forEach(([l,k],i)=>{const y=330+i*48; T(g,100,y+20,l,'t'); for(let j=0;j<k;j++) E('rect',{x:200+j*52,y,width:46,height:28,rx:4,fill:'var(--s1)','fill-opacity':.8},g); T(g,210+k*52,y+20,k+'번','tn');});
+  await c.ready(); await c.w(500);
+  const t=Array(n).fill(0), l=Array(n).fill(0);
+  for(let k=0;k<5;k++){it.textContent=`Iteration ${k+1} / 5`;
+    sq.forEach((e,i)=>{const te=Math.floor(i/6)===k; e.style.fill=te?TEC:TRC; e.style.fillOpacity=te?1:.5; if(te) t[i]++; else l[i]++; tcnt[i].textContent=t[i]; lcnt[i].textContent=l[i];});
+    await c.w(1000);}
+  it.textContent='모든 샘플: test 1번, train 4번'; sq.forEach(e=>{e.style.fill='var(--s3)'; e.style.fillOpacity=1;}); await c.w(900);
+  c.ph(1); await c.w(1500);
+ }});
+
+/* 10 */
+S.push({t:'Stratified k-fold cross validation',b:[
+ '주로 분류 문제에서 사용, label 분포가 클래스별로 불균형할 때 유용',
+ '일반 k-fold: fold에 따라 소수 클래스가 하나도 없거나 몰릴 수 있음',
+ 'Stratified k-fold: 각 fold의 클래스 비율이 전체 데이터 비율에 근사하도록 분할',
+ 'scikit-learn: StratifiedKFold'],
+ f:async c=>{
+  const n=25, labs=[...Array(n)].map((_,i)=>i>=20?1:0); // sorted: 20 A then 5 B
+  const x0=95,y=90,w=31;
+  const sq=labs.map((l,i)=>{const e=E('rect',{x:0,y:0,width:28,height:28,rx:5,fill:l?'var(--pos)':'var(--s2)'},SV); e.style.transition='transform 1s cubic-bezier(.45,0,.25,1)'; e.style.transform=`translate(${x0+i*w}px,${y}px)`; return e;});
+  T(SV,x0,y-14,'전체 25개: 클래스 A 20개 (80%) · 클래스 B 5개 (20%), 정렬된 상태','tl');
+  const fx=f=>120+f*150;
+  [0,1,2,3,4].forEach(f=>{T(SV,fx(f)+60,470,'fold '+(f+1),'tl mid',{p:1});});
+  const bars=[0,1,2,3,4].map(f=>{const b=E('rect',{x:fx(f)+25,width:70,rx:4,fill:'var(--pos)','fill-opacity':.85},SV); b.style.transition='y .8s, height .8s'; b.setAttribute('y',440); b.setAttribute('height',0); return b;});
+  const bv=[0,1,2,3,4].map(f=>T(SV,fx(f)+60,0,'','tn mid'));
+  const base=G({p:1},SV); E('line',{x1:110,x2:860,y1:440,y2:440,stroke:'var(--muted)'},base); const ly=440-.2*150; E('line',{x1:110,x2:860,y1:ly,y2:ly,stroke:'var(--ink)','stroke-dasharray':'6 4'},base); T(base,865,ly+4,'전체 B 비율 20%','tl');
+  const title=T(SV,480,190,'','tb mid');
+  const assign=(foldOf)=>{const cnt=[0,0,0,0,0]; sq.forEach((e,i)=>{const f=foldOf(i), k=cnt[f]++; e.style.transform=`translate(${fx(f)+(k%3)*32+12}px,${205+Math.floor(k/3)*32}px)`;});
+    [0,1,2,3,4].forEach(f=>{const m=labs.filter((l,i)=>foldOf(i)===f); const r=m.filter(x=>x).length/m.length; bars[f].setAttribute('y',440-r*150); bars[f].setAttribute('height',r*150); bv[f].setAttribute('y',432-r*150); bv[f].textContent='B '+Math.round(r*100)+'%';});};
+  await c.ready(); await c.w(1200);
+  title.textContent='일반 k-fold (섞지 않고 순서대로 5개씩)'; c.ph(1); assign(i=>Math.floor(i/5)); await c.w(2600);
+  title.textContent='Stratified k-fold (클래스별로 나누어 배분)';
+  assign(i=>i<20?i%5:i-20); await c.w(2200);
+ }});
+
+/* 11 */
+S.push({t:'Test set 분리와 교차 검증의 결합',b:[
+ '먼저 test set을 떼어 두고 끝까지 사용하지 않음',
+ '나머지 데이터로 k-fold 교차 검증 → 모델·하이퍼파라미터 선택',
+ '선택한 설정으로 나머지 데이터 전체를 다시 학습',
+ '마지막에 test set으로 한 번 평가 → 처음 보는 데이터에서의 성능 추정'],
+ f:async c=>{
+  const y=70;
+  E('rect',{x:80,y,width:640,height:50,rx:6,fill:'var(--s1)','fill-opacity':.75,p:0},SV); E('rect',{x:740,y,width:160,height:50,rx:6,fill:'var(--pos)',p:0},SV);
+  T(SV,400,y+31,'학습용 데이터 80%','tb mid',{p:0}).style.fill='#fff'; T(SV,820,y+31,'Test 20% (잠금)','tb mid',{p:0}).style.fill='#fff';
+  T(SV,820,y+72,'끝까지 보관','tl mid',{p:0});
+  const g=G({p:1},SV);
+  for(let it=0;it<5;it++) for(let f=0;f<5;f++) E('rect',{x:80+f*128+2,y:170+it*30,width:124,height:24,rx:3,fill:f===it?'var(--s3)':'var(--s1)','fill-opacity':f===it?1:.45},g);
+  T(g,80,160,'5-fold 교차 검증으로 모델·하이퍼파라미터 비교','tl');
+  H('<div class="card"><b>모델 A</b> 평균 0.86<br><b>모델 B</b> 평균 0.91 ✓<br><b>모델 C</b> 평균 0.84</div><div class="note" style="margin-top:4px">(비교 예시)</div>',740,160,180,{p:2});
+  E('rect',{x:80,y:350,width:640,height:44,rx:6,fill:'var(--s1)',p:3},SV); T(SV,400,377,'선택한 모델 B를 80% 전체로 다시 학습','tb mid',{p:3}).style.fill='#fff';
+  E('path',{d:'M720,372 C760,372 790,372 810,140',fill:'none',stroke:'var(--pos)','stroke-width':3,'stroke-dasharray':'6 4',p:4},SV);
+  H('<div class="card"><span class="lab">최종 성능</span><div style="font-weight:700">Test set에서 1회 평가</div></div>',600,420,320,{p:4});
+  await c.ready(); for(let p=0;p<=4;p++){c.ph(p); await c.w(1400);}
+ }});
+
+/* 12 */
+S.push({t:'교차 검증의 장점과 단점',b:[
+ '장점 1: 모든 데이터를 평가에 활용 → 특정 평가 데이터에 대한 편중·과적합 방지, 더 일반화된 모델 선택',
+ '장점 2: 모든 데이터를 학습에 활용 → 정확도 향상, 데이터 부족으로 인한 underfitting 방지',
+ '단점: iteration 횟수만큼 학습·평가 반복 → 시간이 오래 걸림',
+ '따라서 학습 데이터가 충분하면 hold-out validation 사용'],
+ f:async c=>{
+  H('<div class="card"><div class="lab">장점 1 · 모든 데이터를 평가에 활용</div><ul style="margin:6px 0 0;padding-left:18px"><li>평가 데이터 편중 방지</li><li>특정 평가 셋에 대한 overfitting 방지</li><li>더 일반화된 모델 선택</li></ul></div>',40,40,420,{p:0});
+  H('<div class="card"><div class="lab">장점 2 · 모든 데이터를 학습에 활용</div><ul style="margin:6px 0 0;padding-left:18px"><li>정확도 향상</li><li>데이터 부족으로 인한 underfitting 방지</li></ul></div>',40,210,420,{p:1});
+  H('<div class="card" style="border-color:var(--err)"><div class="lab" style="color:var(--err)">단점 · 시간이 오래 걸림</div><div>k-fold = 학습·평가 k번 반복</div></div>',500,40,420,{p:2});
+  const g=G({p:2},SV); [['Hold-out',1],['5-fold',5],['10-fold',10]].forEach(([l,k],i)=>{const y=150+i*44; T(g,500,y+19,l,'t'); E('rect',{x:590,y,width:k*30,height:26,rx:4,fill:'var(--err)','fill-opacity':.7,cls:'growx',p:2},g).style.transitionDelay=(i*.2)+'s'; T(g,598+k*30,y+19,'×'+k,'tn');});
+  H('<div class="fx" style="text-align:center">데이터가 많음 → <b>Hold-out</b> &nbsp;|&nbsp; 데이터가 적음 → <b>교차 검증</b></div>',120,400,720,{p:3});
+  await c.ready(); for(let p=0;p<=3;p++){c.ph(p); await c.w(1500);}
+ }});
+
+/* 13 */
+S.push({t:'클래스 불균형 (Class imbalance)',b:[
+ '클래스 불균형 = 클래스별 데이터 수가 크게 차이 나는 상태',
+ '예: test set이 Virginica 75%, Versicolor 25% → 무조건 Virginica만 골라도 정확도 75%',
+ '특정 클래스만 잘 예측하도록 overfitting 되거나 성능이 올바르게 평가되지 않을 수 있음',
+ '대응: undersampling, oversampling, SMOTE'],
+ f:async c=>{
+  const n=20; const lab=[...Array(n)].map((_,i)=>[2,6,11,17,19].includes(i)?1:2);
+  const col=l=>l===1?'var(--s2)':'var(--pos)';
+  const ic=lab.map((l,i)=>{const x=100+(i%10)*60, y=140+Math.floor(i/10)*110; E('circle',{cx:x,cy:y,r:20,fill:col(l)},SV); const t=T(SV,x,y+44,'Virginica','tl mid',{p:2}); return t;});
+  T(SV,100,80,'Test set 20개:  ● Virginica 15개 (75%)   ● Versicolor 5개 (25%)','t',{p:0});
+  T(SV,100,390,'모델: 항상 "Virginica"로 예측','tb',{p:2});
+  H('<div class="card"><span class="lab">Accuracy</span><div class="big">15 / 20 = 0.75</div></div>',100,410,300,{p:3});
+  H('<div class="card"><span class="lab">Versicolor를 찾은 비율</span><div class="big bad">0 / 5 = 0</div></div>',430,410,300,{p:4});
+  await c.ready(); c.ph(0); await c.w(1300); c.ph(2); await c.w(1000);
+  lab.forEach((l,i)=>{if(l===1) ic[i].style.fill='var(--err)';}); c.ph(3); await c.w(1500); c.ph(4); await c.w(1200);
+ }});
+
+/* resampling scatter helper */
+const IMB=(()=>{const r=rng(31); const maj=[], mino=[]; for(let i=0;i<40;i++){const a=r()*6.283, d=Math.sqrt(r())*.28; maj.push([.38+Math.cos(a)*d,.5+Math.sin(a)*d*1.2]);}
+  for(let i=0;i<8;i++){const a=r()*6.283, d=Math.sqrt(r())*.13; mino.push([.72+Math.cos(a)*d,.55+Math.sin(a)*d*1.3]);} return {maj,mino};})();
+function imbPlot(par,x0,y0,s){E('rect',{x:x0,y:y0,width:s,height:s,class:'ax'},par); return {X:v=>x0+v*s,Y:v=>y0+s-v*s};}
+
+/* 14 */
+S.push({t:'Undersampling',b:[
+ '다수 클래스의 데이터를 일부 제거하여 소수 클래스 수에 맞춤',
+ '예: 다수 40개 → 무작위로 8개만 남김 → 8 : 8',
+ '장점: 단순, 학습 데이터가 줄어 빠름 / 단점: 다수 클래스 정보 손실',
+ 'training set에만 적용하고 test set 비율은 그대로 둠'],
+ f:async c=>{
+  const P=imbPlot(SV,80,60,400);
+  const keep=new Set(shuffle([...Array(40).keys()],rng(8)).slice(0,8));
+  const maj=IMB.maj.map((p,i)=>{const e=E('circle',{cx:P.X(p[0]),cy:P.Y(p[1]),r:7,fill:'var(--s2)'},SV); e.style.transition='opacity .6s, r .6s'; return e;});
+  IMB.mino.forEach(p=>E('rect',{x:P.X(p[0])-7,y:P.Y(p[1])-7,width:14,height:14,rx:2,fill:'var(--pos)'},SV));
+  const cnt=T(SV,280,40,'다수 40 : 소수 8','tb mid');
+  const g=G({p:1},SV); [['다수 클래스',40,8,'var(--s2)'],['소수 클래스',8,8,'var(--pos)']].forEach(([l,a,b,col],i)=>{T(g,560,120+i*90,l,'t');});
+  const bA=E('rect',{x:560,y:130,height:30,width:40*8,rx:4,fill:'var(--s2)'},SV), bB=E('rect',{x:560,y:220,height:30,width:8*8,rx:4,fill:'var(--pos)'},SV); bA.style.transition='width 1s';
+  T(SV,560,120,'다수 클래스','t'); T(SV,560,210,'소수 클래스','t');
+  H('<div class="card" style="border-color:var(--err)"><span class="lab" style="color:var(--err)">주의</span><div>제거된 32개의 정보가 학습에 쓰이지 않음</div></div>',560,300,340,{p:2});
+  await c.ready(); await c.w(1200);
+  maj.forEach((e,i)=>{if(!keep.has(i)){e.style.opacity=.08;}}); bA.setAttribute('width',8*8); cnt.textContent='다수 8 : 소수 8'; c.ph(1); await c.w(1800); c.ph(2); await c.w(1200);
+ }});
+
+/* 15 */
+S.push({t:'Oversampling',b:[
+ '소수 클래스의 데이터를 반복 추출(복제)하여 다수 클래스 수에 맞춤',
+ '예: 소수 8개를 각각 5번씩 사용 → 40 : 40',
+ '장점: 정보 손실 없음 / 단점: 같은 샘플 반복 → 소수 클래스에 overfitting 가능',
+ 'training set에만 적용하고 test set 비율은 그대로 둠'],
+ f:async c=>{
+  const P=imbPlot(SV,80,60,400);
+  IMB.maj.forEach(p=>E('circle',{cx:P.X(p[0]),cy:P.Y(p[1]),r:7,fill:'var(--s2)'},SV));
+  const reps=G({},SV);
+  IMB.mino.forEach(p=>E('rect',{x:P.X(p[0])-7,y:P.Y(p[1])-7,width:14,height:14,rx:2,fill:'var(--pos)'},SV));
+  const badges=IMB.mino.map(p=>T(SV,P.X(p[0])+12,P.Y(p[1])-8,'','tn'));
+  const cnt=T(SV,280,40,'다수 40 : 소수 8','tb mid');
+  T(SV,560,120,'다수 클래스','t'); T(SV,560,210,'소수 클래스','t');
+  E('rect',{x:560,y:130,height:30,width:320,rx:4,fill:'var(--s2)'},SV); const bB=E('rect',{x:560,y:220,height:30,width:64,rx:4,fill:'var(--pos)'},SV); bB.style.transition='width 1s';
+  H('<div class="card" style="border-color:var(--err)"><span class="lab" style="color:var(--err)">주의</span><div>똑같은 점이 5번씩 반복 → 그 점들에 과하게 맞출 수 있음</div></div>',560,300,340,{p:2});
+  await c.ready(); await c.w(1000);
+  for(let k=2;k<=5;k++){IMB.mino.forEach((p,i)=>{E('rect',{x:P.X(p[0])-7+k*2.5,y:P.Y(p[1])-7-k*2.5,width:14,height:14,rx:2,fill:'none',stroke:'var(--pos)','stroke-width':1.5},reps); badges[i].textContent='×'+k;});
+    bB.setAttribute('width',64*k); cnt.textContent=`다수 40 : 소수 ${8*k}`; await c.w(600);}
+  c.ph(2); await c.w(1500);
+ }});
+
+/* 16 */
+S.push({t:'리샘플링은 training set에만',b:[
+ '먼저 train / test로 나눈 뒤, training set에만 undersampling·oversampling 수행',
+ 'Test set은 원래 클래스 비율(불균형 상태) 그대로 두고 성능 평가',
+ '분할 전에 oversampling 하면 같은 샘플의 복제본이 train과 test에 동시에 들어가 성능이 부풀려짐 (data leakage)'],
+ f:async c=>{
+  const row=(y,title,ok,p)=>{const g=G({p},SV); T(g,40,y-14,title,'tb').style.fill=ok?'var(--s1)':'var(--err)';
+    const steps=ok?['원본 데이터','① train / test 분할','② train만 oversampling','③ 원래 비율 test로 평가']:['원본 데이터','① oversampling (복제)','② train / test 분할','③ 복제본이 test에도 존재'];
+    steps.forEach((s,i)=>{E('rect',{x:40+i*225,y,width:200,height:46,rx:8,fill:ok?'var(--soft)':'var(--errbg)',stroke:ok?'var(--s1)':'var(--err)','stroke-width':1.5},g); T(g,140+i*225,y+28,s,'t mid'); if(i) E('path',{d:`M${40+i*225-22},${y+23} l14,0`,stroke:'var(--muted)','stroke-width':3},g);});
+    return g;};
+  row(90,'잘못된 순서',false,0); row(300,'올바른 순서',true,2);
+  // leakage illustration
+  const lg=G({p:1},SV); E('rect',{x:500,y:160,width:170,height:60,rx:6,fill:'var(--s1)','fill-opacity':.2},lg); T(lg,585,152,'train','tl mid'); E('rect',{x:700,y:160,width:170,height:60,rx:6,fill:'var(--pos)','fill-opacity':.2},lg); T(lg,785,152,'test','tl mid');
+  E('rect',{x:560,y:178,width:22,height:22,rx:3,fill:'var(--pos)'},lg); E('rect',{x:760,y:178,width:22,height:22,rx:3,fill:'var(--pos)'},lg); E('path',{d:'M582,189 C650,150 700,150 760,189',fill:'none',stroke:'var(--err)','stroke-width':2.5,'stroke-dasharray':'5 4'},lg); T(lg,670,240,'같은 샘플의 복제본 → 이미 본 데이터로 평가','tn mid').style.fill='var(--err)';
+  H('<div class="card">test set 클래스 비율 = 원래 데이터와 동일 (예: 75% : 25%)</div>',260,380,440,{p:3});
+  await c.ready(); for(let p=0;p<=3;p++){c.ph(p); await c.w(1600);}
+ }});
+
+/* 17 */
+S.push({t:'SMOTE (Synthetic Minority Over-sampling Technique)',b:[
+ '소수 클래스 데이터의 최근접 이웃을 이용해 새로운 가상 데이터를 생성',
+ '① 소수 클래스 샘플 xᵢ 선택 → ② 소수 클래스 안에서 k개 최근접 이웃 탐색 → ③ 이웃 하나 x_nn 선택',
+ '④ 두 점을 잇는 선분 위의 임의 위치에 새 샘플 생성: x_new = xᵢ + λ (x_nn − xᵢ), 0 ≤ λ ≤ 1',
+ '단순 복제와 달리 새로운 점이 생김 → 복제 oversampling보다 overfitting 위험이 줄어듦'],
+ f:async c=>{
+  const P=imbPlot(SV,80,60,400);
+  IMB.maj.forEach(p=>E('circle',{cx:P.X(p[0]),cy:P.Y(p[1]),r:6,fill:'var(--s2)','fill-opacity':.35},SV));
+  const mino=IMB.mino; mino.forEach(p=>E('rect',{x:P.X(p[0])-7,y:P.Y(p[1])-7,width:14,height:14,rx:2,fill:'var(--pos)'},SV));
+  const ov=G({},SV), syn=G({},SV);
+  H('<div class="fx">x_new = xᵢ + λ (x_nn − xᵢ)<br><span class="note">λ: 0~1 사이 난수</span></div>',540,60,380,{p:0});
+  const step=H('',540,160,380,{});
+  const r=rng(19);
+  const knn=(i,k)=>mino.map((q,j)=>[j,Math.hypot(q[0]-mino[i][0],q[1]-mino[i][1])]).filter(a=>a[0]!==i).sort((a,b)=>a[1]-b[1]).slice(0,k).map(a=>a[0]);
+  const cnt=T(SV,540,470,'','tb');
+  await c.ready(); c.ph(0); await c.w(800);
+  let made=0;
+  for(let it=0;it<8;it++){
+    const i=it%8, nb=knn(i,3), j=nb[Math.floor(r()*3)], lam=.2+r()*.6; ov.innerHTML='';
+    const slow=it<2;
+    E('circle',{cx:P.X(mino[i][0]),cy:P.Y(mino[i][1]),r:14,fill:'none',stroke:'var(--ink)','stroke-width':2.5},ov);
+    if(slow){step.innerHTML='<div class="card">① 소수 클래스 샘플 xᵢ 선택</div>'; await c.w(900);}
+    nb.forEach(q=>E('line',{x1:P.X(mino[i][0]),y1:P.Y(mino[i][1]),x2:P.X(mino[q][0]),y2:P.Y(mino[q][1]),stroke:'var(--muted)','stroke-width':1.5,'stroke-dasharray':'4 3'},ov));
+    if(slow){step.innerHTML='<div class="card">② 소수 클래스 안에서 k = 3개 최근접 이웃 탐색</div>'; await c.w(1000);}
+    E('line',{x1:P.X(mino[i][0]),y1:P.Y(mino[i][1]),x2:P.X(mino[j][0]),y2:P.Y(mino[j][1]),stroke:'var(--ink)','stroke-width':2.5},ov);
+    if(slow){step.innerHTML='<div class="card">③ 이웃 하나 x_nn 무작위 선택</div>'; await c.w(900);}
+    const nx=mino[i][0]+lam*(mino[j][0]-mino[i][0]), ny=mino[i][1]+lam*(mino[j][1]-mino[i][1]);
+    const d=E('circle',{cx:P.X(mino[i][0]),cy:P.Y(mino[i][1]),r:7,fill:'var(--surface)',stroke:'var(--pos)','stroke-width':3},syn);
+    if(slow) step.innerHTML=`<div class="card">④ 선분 위 λ = ${f2(lam)} 위치에 새 샘플 생성</div>`;
+    await c.tw(slow?900:450,u=>{d.setAttribute('cx',P.X(mino[i][0]+u*lam*(mino[j][0]-mino[i][0]))); d.setAttribute('cy',P.Y(mino[i][1]+u*lam*(mino[j][1]-mino[i][1])));});
+    made++; cnt.textContent=`소수 클래스: 원본 8 + 생성 ${made}`; await c.w(slow?900:250);
+  }
+  ov.innerHTML=''; step.innerHTML='<div class="card">■ 원본 소수 샘플 &nbsp; ○ SMOTE로 생성한 샘플<br><span class="note">생성된 점은 원본 점들 사이에만 위치함</span></div>'; await c.w(1200);
+ }});
+
+/* 18 */
+S.push({t:'화학 데이터 분할: Random split의 문제',b:[
+ 'Random split: 분자를 무작위로 train / test에 배정 (보통 80 : 20)',
+ '매우 유사한 분자가 train과 test에 함께 들어가기 쉬움 → test가 너무 쉬워짐',
+ '따라서 실제 전향적(prospective) 예측보다 성능이 낙관적으로 보일 수 있음',
+ '현실: 과거 데이터로 학습하고 미래에 합성할 분자를 예측 → Time split이 가장 이상적이지만 timestamp가 없는 benchmark가 많음'],
+ f:async c=>{
+  const cp=chemPlot(SV,60,40,420,{});
+  const te=SPLITS.random;
+  H('<div class="card"><div class="lab">Random split</div>train <span style="color:var(--s2)">●</span> · test <span style="color:var(--pos)">●</span> 무작위 배정</div>',520,40,400,{p:0});
+  H(`<div class="card"><div class="lab">빨간 선 = test 분자와 가장 가까운 train 분자</div>대부분의 test 분자 바로 옆에 비슷한 train 분자가 있음</div>`,520,130,400,{p:1});
+  // time split mini
+  const tx0=540,tw=360,ty=330, XT=y=>tx0+(y-2015)/9*tw;
+  const tg=G({p:2},SV); E('line',{x1:tx0,x2:tx0+tw,y1:ty+60,y2:ty+60,stroke:'var(--muted)','stroke-width':2},tg);
+  [2015,2018,2021,2024].forEach(y=>T(tg,XT(y),ty+80,String(y),'tl mid'));
+  T(tg,tx0,ty-10,'Time split: 과거(학습) → 미래(예측)','tb');
+  const ry=rng(3); CHEM.forEach(p=>E('circle',{cx:XT(p.yr+ry()*.9),cy:ty+8+ry()*44,r:4,fill:p.yr>=2023?'var(--pos)':'var(--s2)'},tg));
+  E('line',{x1:XT(2023),x2:XT(2023),y1:ty,y2:ty+66,stroke:'var(--ink)','stroke-width':2.5,'stroke-dasharray':'5 3'},tg);
+  await c.ready(); await c.w(700);
+  cp.color(i=>te.has(i)?TEC:TRC); c.ph(0); await c.w(1500);
+  cp.lines(NN.random); c.ph(1); await c.w(2000); c.ph(2); await c.w(1500);
+ }});
+
+/* 19 */
+S.push({t:'네 가지 화학 데이터 분할 전략',b:[
+ 'A. Random split: 분자를 무작위 배정 → 가장 쉬움, leakage 위험이 가장 높음',
+ 'B. Scaffold split: Bemis–Murcko scaffold(분자 골격)로 묶어 같은 scaffold는 train / test에 동시에 두지 않음',
+ 'C. Butina split: Morgan fingerprint 유사도로 Butina clustering → 유사 분자를 cluster 단위로 분리',
+ 'D. UMAP split: fingerprint → UMAP 2D 투영 → 큰 영역 단위 clustering → 가장 어려운 split, cluster 크기 불균형 문제 가능',
+ '출처: Practical Cheminformatics (Walters, 2024)의 비교를 단순화한 모의 예시'],
+ f:async c=>{
+  const cp=chemPlot(SV,60,40,420,{shapes:true});
+  const desc=H('',520,40,410,{});
+  const info={random:['A. Random split','분자를 무작위로 train / test에 할당 (80 : 20)','가장 쉬움 · leakage 위험 높음'],
+    scaffold:['B. Scaffold split','도형 모양 = 분자 골격(scaffold). 같은 scaffold 묶음은 통째로 train 또는 test','같은 scaffold가 양쪽에 나뉘지 않음'],
+    butina:['C. Butina split','fingerprint 유사도로 가까운 분자끼리 cluster → cluster 단위로 test 배정','유사 분자를 cluster 단위로 분리'],
+    umap:['D. UMAP split','UMAP 2D 투영 공간을 큰 영역으로 clustering → 영역 단위로 test 배정','가장 어려운 split · cluster 크기 불균형 가능']};
+  const show=async(k,lab)=>{const [a,b,d]=info[k]; desc.innerHTML=`<div class="card"><div style="font-weight:700;font-size:17px">${a}</div><div style="margin-top:4px">${b}</div><div class="note" style="margin-top:6px">${d}</div></div>
+     <div class="note" style="margin-top:10px">train <span style="color:var(--s2)">■</span> · test <span style="color:var(--pos)">■</span> · 점선 = 묶음(group)</div>`;
+    cp.color(()=> 'var(--muted)'); if(lab) cp.hulls(lab); else cp.hg.innerHTML=''; await c.w(lab?1500:600);
+    const te=SPLITS[k]; cp.color(i=>te.has(i)?TEC:TRC); await c.w(1900);};
+  await c.ready(); await c.w(400);
+  await show('random',null); await show('scaffold',CHEM.map(p=>p.sc)); await show('butina',BUT); await show('umap',REG);
+ }});
+
+/* 20 */
+S.push({t:'Train–Test 유사성으로 본 split 난이도',b:[
+ '각 test 분자에서 가장 가까운 train 분자까지의 거리 측정 (거리가 짧을수록 = 유사도가 높을수록 예측이 쉬움)',
+ '모의 예시에서도 Random → Scaffold → Butina → UMAP 순으로 test가 train과 멀어짐',
+ 'Walters (2024): Tanimoto 유사도 Random > Scaffold > Butina > UMAP, ML 성능(R²)도 Random이 가장 높고 UMAP이 가장 낮음',
+ 'Split이 쉬우면 성능이 좋아 보임 → 그것이 곧 일반화 성능은 아님'],
+ f:async c=>{
+  const keys=[['random','Random'],['scaffold','Scaffold'],['butina','Butina'],['umap','UMAP']];
+  const all=keys.flatMap(([k])=>NN[k].map(o=>o.d)); const dmax=Math.max(...all)*1.1;
+  const x0=120,y0=60,h=360, Y=v=>y0+h-v/dmax*h;
+  const tk=[0,.1,.2,.3,.4,.5].filter(v=>v<dmax);
+  axes(SV,x0,y0,520,h,{yt:tk.map(v=>[v,v.toFixed(2)]),ym:Y,xt:keys.map((k,i)=>[i,k[1]]),xm:i=>x0+65+i*130,yl:'가장 가까운 train 분자까지 거리'});
+  const r=rng(77);
+  keys.forEach(([k],i)=>{const cx=x0+65+i*130; const g=G({p:i},SV);
+    NN[k].forEach(o=>E('circle',{cx:cx+(r()-.5)*50,cy:Y(o.d),r:5,fill:'var(--pos)','fill-opacity':.75},g));
+    const md=median(NN[k].map(o=>o.d)); E('line',{x1:cx-34,x2:cx+34,y1:Y(md),y2:Y(md),stroke:'var(--ink)','stroke-width':3},g); T(g,cx,Y(md)-10,'중앙값 '+md.toFixed(3),'tn mid');});
+  H('<div class="card"><div class="lab">위로 갈수록</div>test 분자가 train과 덜 닮음<br>→ 예측이 어려움<br>→ 더 현실적인 평가</div>',680,60,250,{p:4});
+  H('<div class="note">Walters (2024) 결과: test 분자의 평균 유사도 Random > Scaffold > Butina > UMAP<br>Morgan fingerprint + LightGBM의 R²도 같은 순서로 낮아짐</div>',680,240,250,{p:4});
+  await c.ready(); for(let p=0;p<=4;p++){c.ph(p); await c.w(1200);}
+ }});
+
+/* 21 */
+S.push({t:'Scaffold split의 한계와 split 선택',b:[
+ '다른 scaffold ≠ 충분히 다른 화학 구조: 골격만 다르고 매우 비슷한 분자가 train / test에 나뉠 수 있음',
+ '따라서 scaffold split도 성능을 과대평가할 수 있음 → train–test 최근접 이웃 유사도를 정량적으로 확인',
+ '가능하면 Time split이 가장 현실적, timestamp가 없으면 Butina split이 균형 잡힌 선택 (Walters의 선호)',
+ 'GroupKFold / GroupKFoldShuffle로 cluster 단위 교차 검증 구현 가능'],
+ f:async c=>{
+  const cp=chemPlot(SV,60,40,420,{shapes:true});
+  const te=SPLITS.scaffold; cp.color(i=>te.has(i)?TEC:TRC); cp.hulls(CHEM.map(p=>p.sc));
+  const close=NN.scaffold.slice().sort((a,b)=>a.d-b.d).slice(0,3);
+  const lg=G({p:1},SV); close.forEach(({i,j})=>{E('line',{x1:cp.X(CHEM[i].x),y1:cp.Y(CHEM[i].y),x2:cp.X(CHEM[j].x),y2:cp.Y(CHEM[j].y),stroke:'var(--err)','stroke-width':3},lg); E('circle',{cx:cp.X(CHEM[i].x),cy:cp.Y(CHEM[i].y),r:12,fill:'none',stroke:'var(--err)','stroke-width':2},lg);});
+  H('<div class="card"><div class="lab">Scaffold split인데도</div>모양(scaffold)은 다르지만 바로 옆에 있는 train–test 쌍 존재 (빨간 선)</div>',520,40,410,{p:1});
+  const flow=[['가능하면 <b>Time split</b><div class="note">과거로 학습 → 미래 분자 예측</div>',140],['Time 정보 없음 → 구조 기반 split',225],
+    ['<b>Scaffold</b> 널리 쓰이나 낙관적 &nbsp;|&nbsp; <b>Butina</b> 유사도 직접 활용 &nbsp;|&nbsp; <b>UMAP</b> 가장 어려움, 크기 불균형',290]];
+  flow.forEach(([h,y],i)=>H(`<div class="box" style="font-weight:500;text-align:left">${h}</div>`,520,y,410,{p:2+i}));
+  H('<div class="fx sm">GroupKFold / GroupKFoldShuffle → cluster 단위 교차 검증</div>',520,400,410,{p:5});
+  await c.ready(); c.ph(0); await c.w(1000); for(let p=1;p<=5;p++){c.ph(p); await c.w(1300);}
+ }});
+
+/* 22 */
+S.push({t:'데이터 준비 정리',th:['주제','핵심 내용','사용 시점'],table:[
+  ['Hold-out validation','training / validation / test를 6:2:2, 7:2:1 등으로 한 번 분할','데이터가 많을 때'],
+  ['k-fold cross validation','k개 fold를 돌아가며 test로 사용, k개 결과 평균 (5-fold, 10-fold)','데이터가 적을 때'],
+  ['Stratified k-fold','각 fold의 클래스 비율을 전체 비율과 비슷하게 유지','분류 · 클래스 불균형'],
+  ['Undersampling / Oversampling','다수 클래스 축소 / 소수 클래스 복제, training set에만 적용','클래스 불균형'],
+  ['SMOTE','소수 클래스 최근접 이웃 사이에 새 샘플 생성','클래스 불균형'],
+  ['화학 데이터 split','Random < Scaffold < Butina < UMAP 순으로 어려움, 가능하면 Time split','분자 성질·활성 예측 모델 평가']],
+ f:async c=>{
+  const items=[['데이터 분할','Hold-out · k-fold · Stratified',1],['클래스 불균형','Under · Over · SMOTE',2],['화학 데이터 split','Random · Scaffold · Butina · UMAP · Time',3]];
+  H('<div class="box" style="font-size:17px">모델 구축을 위한 데이터 준비</div>',330,40,300,{p:0});
+  items.forEach(([a,b,p],i)=>{const x=40+i*305; const l=E('path',{d:`M480,88 C480,120 ${x+140},120 ${x+140},150`,fill:'none',stroke:'var(--muted)','stroke-width':1.6,pathLength:1,class:'draw'},SV); l.dataset.p=p;
+    H(`<div class="box k1" style="font-size:16px">${a}<div style="font:600 13px var(--f-code);margin-top:6px;color:var(--s2)">${b}</div></div>`,x,152,280,{p});});
+  H('<div class="card" style="text-align:center">핵심: test set은 마지막까지 보관 · 리샘플링은 training set에만 · split이 쉬우면 성능이 부풀려짐</div>',100,300,760,{p:4});
+  await c.ready(); for(let p=0;p<=4;p++){c.ph(p); await c.w(1100);}
+ }});
+
+const N=S.length;
+
+/* ---------- navigation ---------- */
+let cur=-1, playing=false, holdTimer=0;
+function caption(s){
+  const sc=S[s];
+  $('capN').textContent='장면 '+(s+1)+' / '+N; $('capT').textContent=sc.t;
+  $('capB').innerHTML=sc.table
+    ? '<div class="tbl"><table class="sum"><thead><tr>'+(sc.th||['평가 상황','주요 지표','함께 명시할 조건']).map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'+sc.table.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('')+'</tbody></table></div>'
+    : '<ul>'+sc.b.map(x=>'<li>'+x+'</li>').join('')+'</ul>';
+  document.querySelectorAll('.chipb').forEach((c,i)=>{c.classList.toggle('cur',i===s); c.classList.toggle('done',i<s); c.setAttribute('aria-current',i===s?'step':'false');});
+  $('prog').style.width=(s/(N-1)*100)+'%';
+}
+async function go(s){
+  s=Math.max(0,Math.min(N-1,s));
+  token.c=true; clearTimeout(holdTimer);
+  const tk={c:false}; token=tk; cur=s;
+  SV.innerHTML=''; HL.innerHTML=''; CV.style.display='none';
+  stage.classList.add('no-anim');
+  caption(s);
+  const c=mkCtx(tk);
+  c.ready=async()=>{reveal(-1); void stage.offsetWidth; await new Promise(r=>requestAnimationFrame(()=>r())); stage.classList.remove('no-anim'); chk(tk);};
+  try{await S[s].f(c);}catch(e){ if(e!=='x') console.error(e); return;}
+  if(playing&&!tk.c){
+    if(s<N-1) holdTimer=setTimeout(()=>{if(playing&&token===tk) go(s+1);}, reduced?2500:4500);
+    else setPlay(false);
+  }
+}
+function setPlay(v){
+  playing=v; $('lPlay').textContent=v?'일시정지':'재생';
+  $('iPlay').innerHTML=v?'<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>':'<path d="M7 4.5v15l12-7.5z"/>';
+  if(!v) clearTimeout(holdTimer);
+}
+S.forEach((sc,i)=>{const b=document.createElement('button'); b.className='chipb'; b.textContent=i+1; b.title=sc.t; b.setAttribute('aria-label','장면 '+(i+1)+': '+sc.t); b.onclick=()=>{setPlay(false); go(i);}; $('chips').appendChild(b);});
+$('bPrev').onclick=()=>{setPlay(false); go(cur-1);};
+$('bNext').onclick=()=>{setPlay(false); go(cur+1);};
+$('bRe').onclick=()=>{go(cur);};
+$('bPlay').onclick=()=>{ if(playing){setPlay(false);return;} setPlay(true); if(cur===N-1) go(0); else go(cur+1); };
+document.addEventListener('keydown',e=>{
+  if(e.key===' '&&e.target.closest&&e.target.closest('button')) return;
+  if(e.key==='ArrowRight'){setPlay(false); go(cur+1);}
+  else if(e.key==='ArrowLeft'){setPlay(false); go(cur-1);}
+  else if(e.key===' '){e.preventDefault(); $('bPlay').click();}
+});
+
+setPlay(!reduced); go(0);
+})();
+</script>
+
+</body></html>
